@@ -6,7 +6,8 @@ import { prisma } from '../../db.js'
 import { evaluateResume } from './evaluate.js'
 import { mergeResume } from './merge.js'
 import { computePeerContext } from './peers.js'
-import { EVAL_PROMPT_VERSION } from './prompt.js'
+import { evalPromptVersion } from './prompt.js'
+import { parseLang, type Lang } from '../../utils/lang.js'
 import { PARSER_VERSION } from '../parse/prompt.js'
 import { notifyEvalBatchIfDone } from '../notify/batch.js'
 import { resolveCandidate } from '../dedup/resolve.js'
@@ -25,7 +26,7 @@ function retryDelayMs(attempt: number): number {
 /** 跑一次评估并落库。失败抛错,由调用方决定退避还是终止。
  *  导出是为了让 seed / 验证脚本走**同一条生产路径** —— 脚本另写一份落库逻辑
  *  必然与这里漂移(横向定位就是这么漏掉过的)。 */
-export async function runEvaluation(applicationId: string, tier: 'screen' | 'deep'): Promise<void> {
+export async function runEvaluation(applicationId: string, tier: 'screen' | 'deep', lang: Lang = 'zh'): Promise<void> {
   const app = await prisma.application.findUnique({
     where: { id: applicationId },
     include: { job: { include: { team: true, scorecard: true } } },
@@ -67,6 +68,7 @@ export async function runEvaluation(applicationId: string, tier: 'screen' | 'dee
     scorecard,
     resume,
     tier,
+    lang,
   })
   if (!r.output || !r.grade) throw new Error(r.error ?? '评估失败')
 
@@ -96,9 +98,9 @@ export async function runEvaluation(applicationId: string, tier: 'screen' | 'dee
       tier,
       scorecardSnapshot: JSON.stringify(scorecard),
       scorecardId: app.job.scorecard.id,
-      promptVersion: EVAL_PROMPT_VERSION,
+      promptVersion: evalPromptVersion(lang),
       parserVersion: PARSER_VERSION,
-      providerId: 'claude',
+      providerId: r.providerId,
       model: r.model,
       gateResults: JSON.stringify(r.gateResults),
       scores: JSON.stringify(r.output.scores),
@@ -128,7 +130,7 @@ async function runJob(jobId: string, log?: FastifyBaseLogger): Promise<void> {
   })
 
   try {
-    await runEvaluation(job.applicationId, job.tier as 'screen' | 'deep')
+    await runEvaluation(job.applicationId, job.tier as 'screen' | 'deep', parseLang(job.lang))
     await prisma.evalJob.update({
       where: { id: jobId },
       data: { status: 'done', finishedAt: new Date(), activeKey: null, lastError: null },
@@ -222,12 +224,13 @@ export async function enqueueEval(
   applicationId: string,
   tier: 'screen' | 'deep',
   batch?: { batchId: string; createdBy: string | null },
+  lang: Lang = 'zh',
 ): Promise<{ queued: boolean }> {
   try {
     await prisma.evalJob.create({
       data: {
         applicationId, tier, activeKey: `${applicationId}:${tier}`,
-        batchId: batch?.batchId, createdBy: batch?.createdBy,
+        batchId: batch?.batchId, createdBy: batch?.createdBy, lang,
       },
     })
     return { queued: true }

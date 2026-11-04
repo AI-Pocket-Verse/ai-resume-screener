@@ -22,7 +22,18 @@ export interface UserMenuItem {
   className?: string
 }
 
+/** 菜单里写死的文案。不传的项保持默认中文;本包不依赖产品的 i18n,由产品传入翻译。 */
+export interface UserMenuLabels {
+  login?: string
+  settings?: string
+  logout?: string
+  /** 本地单用户模式下显示的用户名(默认用 auth-core 里的「本地用户」)。 */
+  localUser?: string
+}
+
 export interface UserMenuProps {
+  /** 覆盖写死的文案(登录 / 设置 / 退出登录)。`loginLabel` 优先于 `labels.login`。 */
+  labels?: UserMenuLabels
   /** Handler for the "设置" item. Omit to hide it. */
   onSettingsClick?: () => void
   /** Extra menu items inserted between "设置" and "退出登录". */
@@ -66,7 +77,7 @@ const PLACEMENT = {
   'top-start': 'left-0 bottom-full mb-2',
 } as const
 
-export function UserMenu({ onSettingsClick, items, onLoginClick, loginLabel = '登录', onLogout, subtitle, avatarOnly = false, placement = 'bottom-end' }: UserMenuProps) {
+export function UserMenu({ onSettingsClick, items, onLoginClick, loginLabel, labels, onLogout, subtitle, avatarOnly = false, placement = 'bottom-end' }: UserMenuProps) {
   const { user, loading, isLocal, logout, loginDirect } = useAuth()
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
@@ -96,12 +107,13 @@ export function UserMenu({ onSettingsClick, items, onLoginClick, loginLabel = '�
         onClick={() => (onLoginClick ? onLoginClick() : loginDirect())}
         className="px-4 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-semibold transition-colors"
       >
-        {loginLabel}
+        {loginLabel ?? labels?.login ?? '登录'}
       </button>
     )
   }
 
-  const initial = user.name?.[0] ?? '?'
+  const name = isLocal && labels?.localUser ? labels.localUser : user.name
+  const initial = name?.[0] ?? '?'
   const avatar = (sizeClass: string) =>
     user.avatar_url ? (
       <img src={user.avatar_url} alt="" className={`${sizeClass} rounded-full object-cover`} />
@@ -122,8 +134,8 @@ export function UserMenu({ onSettingsClick, items, onLoginClick, loginLabel = '�
           onClick={() => setOpen((o) => !o)}
           aria-haspopup="menu"
           aria-expanded={open}
-          title={user.name}
-          aria-label={user.name}
+          title={name}
+          aria-label={name}
           className="block rounded-full ring-1 ring-indigo-100 hover:ring-2 hover:ring-indigo-300 transition-all"
         >
           {avatar('w-8 h-8')}
@@ -137,7 +149,7 @@ export function UserMenu({ onSettingsClick, items, onLoginClick, loginLabel = '�
           className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-indigo-50/60 hover:bg-indigo-100/80 border border-indigo-100 transition-colors"
         >
           {avatar('w-6 h-6')}
-          <span className="text-xs font-medium text-gray-700 max-w-[120px] truncate">{user.name}</span>
+          <span className="text-xs font-medium text-gray-700 max-w-[120px] truncate">{name}</span>
           <Chevron open={open} />
         </button>
       )}
@@ -148,7 +160,7 @@ export function UserMenu({ onSettingsClick, items, onLoginClick, loginLabel = '�
           className={`absolute ${PLACEMENT[placement]} ${subtitle !== undefined ? 'w-60' : 'w-44'} bg-white rounded-2xl shadow-xl shadow-indigo-200/40 border border-indigo-50 py-2 z-50`}
         >
           <div className="px-4 py-3 border-b border-gray-50">
-            <p className="text-sm font-semibold text-gray-800 truncate">{user.name}</p>
+            <p className="text-sm font-semibold text-gray-800 truncate">{name}</p>
             {subtitle !== undefined ? (
               <div className="mt-1">{subtitle}</div>
             ) : (
@@ -162,7 +174,7 @@ export function UserMenu({ onSettingsClick, items, onLoginClick, loginLabel = '�
             {onSettingsClick && (
               <MenuRow
                 icon={<GearIcon />}
-                label="设置"
+                label={labels?.settings ?? '设置'}
                 onClick={() => { setOpen(false); onSettingsClick() }}
               />
             )}
@@ -172,7 +184,7 @@ export function UserMenu({ onSettingsClick, items, onLoginClick, loginLabel = '�
             {!isLocal && (
               <MenuRow
                 icon={<LogoutIcon />}
-                label="退出登录"
+                label={labels?.logout ?? '退出登录'}
                 onClick={() => { setOpen(false); onLogout ? onLogout() : void logout() }}
                 className="text-red-500 hover:bg-red-50/60"
               />

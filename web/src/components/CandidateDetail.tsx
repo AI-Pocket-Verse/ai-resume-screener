@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import { cn } from '@/lib/cn'
-import { api, ApiError, type CandidateDetail as Detail, type CandidateRow, type EvaluationDetail, type ResumeData } from '@/lib/api'
+import { api, type CandidateDetail as Detail, type CandidateRow, type EvaluationDetail, type ResumeData } from '@/lib/api'
+import { errorMessage } from '@/lib/errors'
+import { useI18n } from '@/i18n'
+import { decisionLabel, degreeLabel, dupFieldLabel, skillLabel } from '@/lib/values'
 import { EvaluationView } from './EvaluationView'
 import { TagEditor } from './TagEditor'
 
@@ -16,6 +19,7 @@ export function CandidateDetail({
   onDecide: (d: 'pass' | 'reject' | 'hold' | null) => void
   onChanged: () => void
 }) {
+  const { t } = useI18n()
   const [tab, setTab] = useState<Tab>('evaluation')
   const [detail, setDetail] = useState<Detail | null>(null)
   const [evaluation, setEvaluation] = useState<EvaluationDetail | null>(null)
@@ -57,7 +61,7 @@ export function CandidateDetail({
       await p
       onChanged()
     } catch (e) {
-      setActionError(e instanceof ApiError ? e.message : '操作失败，请重试')
+      setActionError(errorMessage(e, t))
       setTimeout(() => setActionError(null), 4000)
     }
   }
@@ -71,18 +75,18 @@ export function CandidateDetail({
             <div className="flex items-center gap-2">
               <h2 className="truncate text-lg font-semibold">{row.name}</h2>
               {detail?.aliases.length ? (
-                <span className="text-xs text-fg-faint">曾用名 {detail.aliases.join('、')}</span>
+                <span className="text-xs text-fg-faint">{t('candidate.alias', { names: detail.aliases.join(t('common.listSep')) })}</span>
               ) : null}
             </div>
             <p className="mt-0.5 text-sm text-fg-muted">
               {row.currentCompany ?? '—'}
-              {row.currentIsPast && row.currentCompany ? '（上一份）' : ''}
-              {row.totalYears != null ? ` · ${row.totalYears} 年经验` : ' · 年限无法确定'}
+              {row.currentIsPast && row.currentCompany ? t('candidate.past') : ''}
+              {row.totalYears != null ? t('candidate.experience', { n: row.totalYears }) : t('candidate.yearsUnknown')}
               {parsed?.data.basic.city ? ` · ${parsed.data.basic.city}` : ''}
             </p>
             {detail ? (
               <p className="mt-1 text-xs text-fg-faint">
-                {detail.identifiers.map((i) => i.value).join(' · ') || '未识别到联系方式'}
+                {detail.identifiers.map((i) => i.value).join(' · ') || t('candidate.noContact')}
                 {/* 说清楚这是脱敏后的值,否则会被当成「库里存的就是这样」而去
                     重新解析/找 HR 报错。 */}
               </p>
@@ -90,10 +94,10 @@ export function CandidateDetail({
           </div>
           <div className="flex shrink-0 gap-1.5">
               <button onClick={() => onAnalyze('screen')} className="rounded-lg border border-line px-2.5 py-1.5 text-xs hover:bg-surface">
-                重新分析
+                {t('candidate.reanalyze')}
               </button>
             <button onClick={() => onAnalyze('deep')} className="rounded-lg bg-accent px-2.5 py-1.5 text-xs text-accent-fg hover:opacity-90">
-              深度评估
+              {t('candidate.deep')}
             </button>
           </div>
         </div>
@@ -103,32 +107,32 @@ export function CandidateDetail({
         {(detail?.duplicateHints ?? []).map((h) => (
           <div key={h.id} className="mt-3 flex items-center gap-2 rounded-lg bg-warning-bg px-3 py-2 text-xs text-warning-fg">
             <span className="flex-1">
-              疑似与「{h.otherName ?? '另一位候选人'}」是同一人（{h.matchedField}）
+              {t('candidate.dup.hint', { name: h.otherName ?? t('candidate.dup.otherName'), field: dupFieldLabel(h.matchedField, t) })}
             </span>
             <button
               onClick={() => { void act(api.mergeCandidate(row.candidateId, h.otherId)) }}
               className="rounded border border-warning-line px-2 py-0.5 hover:bg-bg/50"
-            >合并</button>
+            >{t('candidate.dup.merge')}</button>
             <button
               onClick={() => { void act(api.dismissHint(h.id)) }}
               className="rounded px-2 py-0.5 hover:bg-bg/50"
-            >忽略</button>
+            >{t('candidate.dup.dismiss')}</button>
           </div>
         ))}
 
         {detail?.wasRedirected ? (
           <div className="mt-3 flex items-center gap-2 rounded-lg bg-surface px-3 py-2 text-xs text-fg-muted">
-            <span className="flex-1">这条记录已合并到另一位候选人下</span>
+            <span className="flex-1">{t('candidate.merged')}</span>
             <button
               onClick={() => { void act(api.undoMerge(row.candidateId)) }}
               className="rounded border border-line px-2 py-0.5 hover:bg-bg"
-            >撤销合并</button>
+            >{t('candidate.undoMerge')}</button>
           </div>
         ) : null}
 
         {parsed?.data.injectionSuspected ? (
           <div className="mt-3 rounded-lg bg-warning-bg px-3 py-2 text-xs text-warning-fg">
-            ⚠️ 这份简历中含有疑似操纵评估的内容，已忽略并记录，请人工核对：
+            {t('candidate.injection')}
             <span className="mt-1 block opacity-80">{parsed.data.injectionEvidence}</span>
           </div>
         ) : null}
@@ -146,8 +150,8 @@ export function CandidateDetail({
         {/* HR 结论 —— 唯一的候选人状态真相源,后续流程走飞书。
             只读身份看得到当前结论(那是重要信息),但改不了。 */}
         <div className="mt-3 flex items-center gap-1.5">
-          <span className="text-xs text-fg-faint">结论</span>
-          {([['pass', '通过'], ['hold', '待定'], ['reject', '淘汰']] as const).map(([v, label]) => (
+          <span className="text-xs text-fg-faint">{t('candidate.decision')}</span>
+          {(['pass', 'hold', 'reject'] as const).map((v) => (
             <button
               key={v}
               onClick={() => onDecide(row.hrDecision === v ? null : v)}
@@ -155,14 +159,14 @@ export function CandidateDetail({
                 'rounded-lg border px-2.5 py-1 text-xs transition-colors',
                 row.hrDecision === v ? 'border-accent bg-accent text-accent-fg' : 'border-line hover:bg-surface',
               )}
-            >{label}</button>
+            >{decisionLabel(v, t)}</button>
           ))}
         </div>
       </div>
 
       {/* tabs */}
       <div className="flex shrink-0 gap-4 border-b border-line px-5">
-        {([['evaluation', '评估'], ['resume', '简历'], ['raw', '原始抽取']] as const).map(([k, label]) => (
+        {(['evaluation', 'resume', 'raw'] as const).map((k) => (
           <button
             key={k}
             onClick={() => setTab(k)}
@@ -170,19 +174,19 @@ export function CandidateDetail({
               '-mb-px border-b-2 py-2.5 text-sm transition-colors',
               tab === k ? 'border-line-strong font-medium' : 'border-transparent text-fg-faint hover:text-fg-muted',
             )}
-          >{label}</button>
+          >{t(`candidate.tab.${k}`)}</button>
         ))}
       </div>
 
       <div className="flex-1 overflow-y-auto px-5 py-4">
         {loading ? (
-          <p className="mt-16 text-center text-sm text-fg-faint">加载中…</p>
+          <p className="mt-16 text-center text-sm text-fg-faint">{t('common.loading')}</p>
         ) : tab === 'evaluation' ? (
           evaluation
             ? <EvaluationView evaluation={evaluation} />
             : <NotAnalyzed onAnalyze={() => onAnalyze('screen')} />
         ) : tab === 'resume' ? (
-          parsed ? <ResumeView data={parsed.data} /> : <p className="text-sm text-fg-faint">这份简历还没有解析完成。</p>
+          parsed ? <ResumeView data={parsed.data} /> : <p className="text-sm text-fg-faint">{t('candidate.notParsed')}</p>
         ) : (
           <pre className="whitespace-pre-wrap break-all rounded-lg bg-surface p-3 text-xs leading-relaxed">
             {JSON.stringify(parsed?.data ?? {}, null, 2)}
@@ -196,23 +200,25 @@ export function CandidateDetail({
 /** 解析完但没分析 —— 这是常态,不是异常:让 HR 先确认解析无误
  *  再决定花算力,误传一批文件不会白烧一小时。 */
 function NotAnalyzed({ onAnalyze }: { onAnalyze: () => void }) {
+  const { t } = useI18n()
   return (
     <div className="mx-auto mt-20 max-w-sm rounded-xl border border-dashed border-line p-8 text-center">
-      <p className="text-sm text-fg-muted">简历已解析完成，尚未与 JD 比对分析</p>
-      <p className="mt-1 text-xs text-fg-faint">分析会调用模型，单份约 1-2 分钟</p>
+      <p className="text-sm text-fg-muted">{t('candidate.notAnalyzed')}</p>
+      <p className="mt-1 text-xs text-fg-faint">{t('candidate.analyzeCost')}</p>
       <button onClick={onAnalyze} className="mt-4 rounded-lg bg-accent px-4 py-2 text-sm text-accent-fg hover:opacity-90">
-        开始分析
+        {t('candidate.startAnalyze')}
       </button>
     </div>
   )
 }
 
 function ResumeView({ data }: { data: ResumeData }) {
+  const { t, lang } = useI18n()
   return (
     <div className="space-y-6 text-sm">
       {data.work.length ? (
         <section>
-          <h3 className="mb-2 text-sm font-semibold">工作经历</h3>
+          <h3 className="mb-2 text-sm font-semibold">{t('resume.work')}</h3>
           <div className="space-y-3">
             {data.work.map((w, i) => (
               <div key={i} className="border-l-2 border-line pl-3">
@@ -220,7 +226,7 @@ function ResumeView({ data }: { data: ResumeData }) {
                   <span className="font-medium">{w.company}</span>
                   <span className="text-fg-muted">{w.title ?? ''}</span>
                   <span className="ml-auto text-xs text-fg-faint">
-                    {w.start ?? '?'} ~ {w.end === 'present' ? '至今' : (w.end ?? '?')}
+                    {w.start ?? '?'} ~ {w.end === 'present' ? t('resume.present') : (w.end ?? '?')}
                   </span>
                 </div>
                 <ul className="mt-1 space-y-0.5 text-xs text-fg-muted">
@@ -235,7 +241,7 @@ function ResumeView({ data }: { data: ResumeData }) {
 
       {data.project.length ? (
         <section>
-          <h3 className="mb-2 text-sm font-semibold">项目经历</h3>
+          <h3 className="mb-2 text-sm font-semibold">{t('resume.project')}</h3>
           <div className="space-y-2.5">
             {data.project.map((p, i) => (
               <div key={i} className="border-l-2 border-line pl-3">
@@ -243,7 +249,7 @@ function ResumeView({ data }: { data: ResumeData }) {
                   <span className="font-medium">{p.name}</span>
                   {/* workIndex 决定了评估时能否判断这个项目是在什么规模的公司做的 */}
                   <span className="text-xs text-fg-faint">
-                    {p.workIndex != null ? (data.work[p.workIndex]?.company ?? `work#${p.workIndex}`) : '独立项目'}
+                    {p.workIndex != null ? (data.work[p.workIndex]?.company ?? `work#${p.workIndex}`) : t('resume.soloProject')}
                   </span>
                 </div>
                 {p.techStack.length ? (
@@ -262,11 +268,11 @@ function ResumeView({ data }: { data: ResumeData }) {
 
       {data.education.length ? (
         <section>
-          <h3 className="mb-2 text-sm font-semibold">教育背景</h3>
+          <h3 className="mb-2 text-sm font-semibold">{t('resume.education')}</h3>
           {data.education.map((e, i) => (
             <div key={i} className="flex items-baseline gap-2">
               <span className="font-medium">{e.school}</span>
-              <span className="text-fg-muted">{e.major ?? ''} {e.degree ?? ''}</span>
+              <span className="text-fg-muted">{e.major ?? ''} {degreeLabel(e.degree, lang, t)}</span>
               <span className="ml-auto text-xs text-fg-faint">{e.start ?? '?'} ~ {e.end ?? '?'}</span>
             </div>
           ))}
@@ -275,11 +281,11 @@ function ResumeView({ data }: { data: ResumeData }) {
 
       {data.skill.length ? (
         <section>
-          <h3 className="mb-2 text-sm font-semibold">技能</h3>
+          <h3 className="mb-2 text-sm font-semibold">{t('resume.skills')}</h3>
           <div className="flex flex-wrap gap-1.5">
             {data.skill.map((s) => (
               <span key={s.name} className="rounded-lg bg-surface px-2 py-1 text-xs">
-                {s.name}{s.level ? <span className="ml-1 text-fg-faint">{s.level}</span> : null}
+                {skillLabel(s.name, lang)}{s.level ? <span className="ml-1 text-fg-faint">{s.level}</span> : null}
               </span>
             ))}
           </div>

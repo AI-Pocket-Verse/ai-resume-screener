@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { translator } from '@/i18n'
 import type { CandidateRow } from './api'
 import {
   analyzeTargets, countByFilter, filterRows, isParsing, isUnanalyzed, rowBadges,
@@ -109,6 +110,8 @@ describe('analyzeTargets', () => {
   })
 })
 
+const badges = (r: CandidateRow) => rowBadges(r, translator('zh'))
+
 describe('rowBadges', () => {
   // 档位不能莫名其妙地变 —— 精评覆盖粗评时必须带出解释。
   it('精评改了档位 → 带出粗评', () => {
@@ -116,28 +119,28 @@ describe('rowBadges', () => {
       applicationId: '1',
       verdict: { grade: 'B', score: 75, source: 'deep', summary: null, supersededGrade: 'A' },
     })
-    expect(rowBadges(r)[0]!.text).toContain('粗评为 A')
+    expect(badges(r)[0]!.text).toContain('粗评为 A')
   })
 
   it('分析中与解析中互斥,不会同时出现', () => {
     const r = row({ applicationId: '1', parseState: 'pending', analyzing: 'screen' })
-    const texts = rowBadges(r).map((b) => b.text)
+    const texts = badges(r).map((b) => b.text)
     expect(texts).toContain('分析中…')
     expect(texts).not.toContain('解析中…')
   })
 
   it('深度分析中单独文案', () => {
     const r = row({ applicationId: '1', analyzing: 'deep' })
-    expect(rowBadges(r)[0]!.text).toBe('深度分析中…')
+    expect(badges(r)[0]!.text).toBe('深度分析中…')
   })
 
   it('解析失败标 error', () => {
-    const b = rowBadges(row({ applicationId: '1', parseState: 'failed' }))
+    const b = badges(row({ applicationId: '1', parseState: 'failed' }))
     expect(b).toEqual([{ text: '解析失败', tone: 'error' }])
   })
 
   it('正常已分析 → 无徽标', () => {
-    expect(rowBadges(graded('a', 'A'))).toEqual([])
+    expect(badges(graded('a', 'A'))).toEqual([])
   })
 
   // 疑似注入必须在列表上就看得见:这条信息的价值恰恰在于「点开之前就该警惕」。
@@ -145,11 +148,19 @@ describe('rowBadges', () => {
   // AI 从业者是正常候选人,说成拦截会让 HR 直接跳过这个人。
   it('疑似注入 → 列表上标红提示人工核对,且不影响档位显示', () => {
     const r = { ...graded('a', 'A'), injectionSuspected: true }
-    expect(rowBadges(r)).toEqual([{ text: '含可疑内容，请人工核对', tone: 'error' }])
+    expect(badges(r)).toEqual([{ text: '含可疑内容，请人工核对', tone: 'error' }])
   })
 
   it('疑似注入与解析失败可以并存', () => {
-    const b = rowBadges(row({ applicationId: '1', parseState: 'failed', injectionSuspected: true }))
+    const b = badges(row({ applicationId: '1', parseState: 'failed', injectionSuspected: true }))
     expect(b).toHaveLength(2)
+  })
+})
+
+describe('rowBadges 英文', () => {
+  it('英文界面出英文文案', () => {
+    const t = translator('en')
+    expect(rowBadges(row({ applicationId: '1', parseState: 'failed' }), t)).toEqual([{ text: 'Parsing failed', tone: 'error' }])
+    expect(rowBadges(row({ applicationId: '1', parseState: 'pending' }), t).map((b) => b.text)).toEqual(['Parsing…'])
   })
 })

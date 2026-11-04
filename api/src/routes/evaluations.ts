@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { prisma } from '../db.js'
 import { pickCurrent, sortByVerdict } from '../services/evaluate/current.js'
 import { enqueueEval } from '../services/evaluate/queue.js'
+import { requestLang } from '../utils/lang.js'
 import { canAccessCandidate, canAccessJob, requireJobAccess, visibleJobIds } from '../utils/authz.js'
 import { safeParse, safeParseObject } from '../utils/json.js'
 
@@ -148,7 +149,7 @@ export async function evaluationRoutes(app: FastifyInstance) {
     const batch = { batchId: createId(), createdBy: req.user!.open_id ?? null }
     const results = []
     for (const applicationId of b.data.applicationIds) {
-      const r = await enqueueEval(applicationId, b.data.tier, batch)
+      const r = await enqueueEval(applicationId, b.data.tier, batch, requestLang(req))
       results.push({ applicationId, ...r })
     }
     return { queued: results.filter((r) => r.queued).length, results }

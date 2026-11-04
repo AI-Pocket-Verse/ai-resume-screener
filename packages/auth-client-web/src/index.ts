@@ -292,7 +292,7 @@ export function RequireLogin({ children, onAuthorized }: RequireLoginProps) {
 /** Shared nav widget (avatar + popup menu). Lives in its own file because
  *  it ships JSX; keeping index.ts free of JSX avoids React being a hard
  *  runtime dep for non-UI consumers. */
-export { UserMenu, type UserMenuItem, type UserMenuProps } from './UserMenu'
+export { UserMenu, type UserMenuItem, type UserMenuLabels, type UserMenuProps } from './UserMenu'
 
 /** Broadcast a sign-in event to peer tabs/products (called by SSO on callback). */
 export function announceSignedIn(): void {

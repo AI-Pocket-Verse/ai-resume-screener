@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { cn } from '@/lib/cn'
+import { useI18n } from '@/i18n'
 
 /**
  * 自定义下拉。**项目禁用原生 `<select>`** —— 它的下拉弹层由 OS/浏览器渲染,
@@ -15,7 +16,7 @@ export interface SelectOption {
 }
 
 export function Select({
-  value, options, onChange, placeholder = '请选择', className,
+  value, options, onChange, placeholder, className,
 }: {
   value: string | null
   options: SelectOption[]
@@ -23,6 +24,7 @@ export function Select({
   placeholder?: string
   className?: string
 }) {
+  const { t } = useI18n()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const current = options.find((o) => o.value === value)
@@ -51,7 +53,7 @@ export function Select({
         className="flex h-10 w-full items-center rounded-lg border border-line bg-bg px-3 text-left text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/15"
       >
         <span className={cn('flex-1 truncate', !current && 'text-fg-faint')}>
-          {current?.label ?? placeholder}
+          {current?.label ?? placeholder ?? t('select.placeholder')}
         </span>
         <span className="ml-2 text-fg-faint">{open ? '▴' : '▾'}</span>
       </button>
@@ -59,7 +61,7 @@ export function Select({
       {open ? (
         <div className="absolute left-0 right-0 top-11 z-20 max-h-60 overflow-y-auto rounded-lg border border-line bg-elevated py-1 shadow-lg">
           {options.length === 0 ? (
-            <p className="px-3 py-2 text-xs text-fg-faint">没有可选项</p>
+            <p className="px-3 py-2 text-xs text-fg-faint">{t('select.empty')}</p>
           ) : options.map((o) => (
             <button
               key={o.value}

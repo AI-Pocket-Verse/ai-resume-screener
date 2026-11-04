@@ -3,18 +3,19 @@
 // **从组件里抽出来是为了能测**:这些分支(未分析 vs 解析中 vs 解析失败、
 // 档位计数、精评覆盖粗评的展示)是前端真正容易算错的地方,而截图只能证明
 // 「渲染出来了」,证明不了「算对了」。
+import type { MessageKey, TFunction } from '@/i18n'
 import type { CandidateRow, Grade } from './api'
 
 export type Filter = 'all' | Grade | 'unanalyzed' | 'pending'
 
-export const FILTERS: Array<{ key: Filter; label: string }> = [
-  { key: 'all', label: '全部' },
-  { key: 'A', label: 'A 档' },
-  { key: 'B', label: 'B 档' },
-  { key: 'C', label: 'C 档' },
-  { key: 'D', label: 'D 档' },
-  { key: 'unanalyzed', label: '未分析' },
-  { key: 'pending', label: '解析中' },
+export const FILTERS: Array<{ key: Filter; label: MessageKey }> = [
+  { key: 'all', label: 'list.filter.all' },
+  { key: 'A', label: 'list.filter.A' },
+  { key: 'B', label: 'list.filter.B' },
+  { key: 'C', label: 'list.filter.C' },
+  { key: 'D', label: 'list.filter.D' },
+  { key: 'unanalyzed', label: 'list.filter.unanalyzed' },
+  { key: 'pending', label: 'list.filter.pending' },
 ]
 
 /** 解析尚未结束(排队/渲染/抽取中)。failed 是终态,不算「进行中」。 */
@@ -71,19 +72,19 @@ export function analyzeTargets(rows: CandidateRow[], selection: Set<string>): st
  *  但解析态与分析态**互斥** —— 没解析完根本不可能在分析。 */
 export interface RowBadge { text: string; tone: 'info' | 'warn' | 'error' }
 
-export function rowBadges(row: CandidateRow): RowBadge[] {
+export function rowBadges(row: CandidateRow, t: TFunction): RowBadge[] {
   const out: RowBadge[] = []
   if (row.verdict?.supersededGrade) {
-    out.push({ text: `深度分析后（粗评为 ${row.verdict.supersededGrade}）`, tone: 'info' })
+    out.push({ text: t('list.badge.superseded', { grade: row.verdict.supersededGrade }), tone: 'info' })
   }
   if (row.analyzing) {
-    out.push({ text: row.analyzing === 'deep' ? '深度分析中…' : '分析中…', tone: 'info' })
+    out.push({ text: row.analyzing === 'deep' ? t('list.badge.analyzingDeep') : t('list.badge.analyzing'), tone: 'info' })
   } else if (isParsing(row)) {
-    out.push({ text: '解析中…', tone: 'warn' })
+    out.push({ text: t('list.badge.parsing'), tone: 'warn' })
   }
-  if (row.parseState === 'failed') out.push({ text: '解析失败', tone: 'error' })
+  if (row.parseState === 'failed') out.push({ text: t('list.badge.failed'), tone: 'error' })
   // 疑似注入放在**列表**上,而不是只在详情页角落 —— 这条信息的价值就在于
   // 「点开之前就该警惕」。不阻断评估:简历里写 prompt 的 AI 从业者是正常候选人。
-  if (row.injectionSuspected) out.push({ text: '含可疑内容，请人工核对', tone: 'error' })
+  if (row.injectionSuspected) out.push({ text: t('list.badge.suspicious'), tone: 'error' })
   return out
 }

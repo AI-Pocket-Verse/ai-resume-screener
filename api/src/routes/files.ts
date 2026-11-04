@@ -7,6 +7,7 @@ import { enqueueParse } from '../services/parse/queue.js'
 import { audit } from '../services/compliance/audit.js'
 import { canAccessJob, jobScopeWhere, visibleJobIds } from '../utils/authz.js'
 import { safeParse, safeParseObject } from '../utils/json.js'
+import { requestLang } from '../utils/lang.js'
 
 const ERROR_STATUS: Record<string, number> = {
   payload_too_large: 413,
@@ -84,6 +85,7 @@ export async function fileRoutes(app: FastifyInstance) {
     await enqueueParse(file.id, {
       batchId: uploadBatchId(req.headers['x-upload-batch'], req.user!.id),
       createdBy: req.user!.open_id ?? null,
+      lang: requestLang(req),
     })
 
     return reply.code(201).send({ id: file.id, filename: file.filename, parseState: file.parseState })
@@ -125,7 +127,7 @@ export async function fileRoutes(app: FastifyInstance) {
         uploadedById: req.user!.id,
       },
     })
-    await enqueueParse(file.id, { batchId: createId(), createdBy: req.user!.open_id ?? null })
+    await enqueueParse(file.id, { batchId: createId(), createdBy: req.user!.open_id ?? null, lang: requestLang(req) })
     return reply.code(201).send({ id: file.id, filename: file.filename, parseState: file.parseState })
   })
 

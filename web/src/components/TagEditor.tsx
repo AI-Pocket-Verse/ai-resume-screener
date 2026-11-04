@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '@/lib/api'
+import { useI18n } from '@/i18n'
 
 /**
  * 业务标签:自由输入 + 自动补全。
@@ -16,6 +17,7 @@ export function TagEditor({
   tags: Array<{ id: string; label: string; color: string | null }>
   onChanged: () => void
 }) {
+  const { t: tr } = useI18n()
   const [adding, setAdding] = useState(false)
   const [value, setValue] = useState('')
   const [suggestions, setSuggestions] = useState<Array<{ label: string; count: number }>>([])
@@ -48,7 +50,7 @@ export function TagEditor({
           <button
             onClick={() => { void api.removeTag(t.id).then(onChanged).catch(() => onChanged()) }}
             className="text-fg-faint opacity-0 transition-opacity hover:text-danger-fg group-hover:opacity-100"
-            aria-label={`删除标签 ${t.label}`}
+            aria-label={tr('tag.remove', { label: t.label })}
           >×</button>
         </span>
       ))}
@@ -64,7 +66,7 @@ export function TagEditor({
               if (e.key === 'Escape') { setAdding(false); setValue('') }
             }}
             onBlur={() => setTimeout(() => setAdding(false), 150)}
-            placeholder="标签名"
+            placeholder={tr('tag.placeholder')}
             className="h-6 w-24 rounded border border-line px-1.5 text-[11px] outline-none focus:border-accent"
           />
           {suggestions.length ? (
@@ -88,7 +90,7 @@ export function TagEditor({
         <button
           onClick={() => setAdding(true)}
           className="rounded border border-dashed border-line px-1.5 py-0.5 text-[11px] text-fg-faint hover:border-fg-faint hover:text-fg-muted"
-        >+ 标签</button>
+        >{tr('tag.add')}</button>
       )}
     </div>
   )

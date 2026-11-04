@@ -17,6 +17,7 @@ import { RenderError, renderPdf } from '../render.js'
 import { extractResume } from './extract.js'
 import { deriveFields } from './derive.js'
 import { PARSER_VERSION, PROMPT_VERSION } from './prompt.js'
+import type { Lang } from '../../utils/lang.js'
 
 const TICK_MS = 5_000
 /** 一次 tick 最多捞几条。渲染/LLM 各自有信号量,这里只是别一次性把上千条读进内存。 */
@@ -415,11 +416,11 @@ export function stopParseQueue(): void {
  *  直接挡掉,不需要应用层先查再插(那中间有竞态窗口)。 */
 export async function enqueueParse(
   resumeFileId: string,
-  batch?: { batchId: string; createdBy: string | null },
+  batch?: { batchId: string; createdBy: string | null; lang?: Lang },
 ): Promise<{ queued: boolean }> {
   try {
     await prisma.parseJob.create({
-      data: { resumeFileId, activeKey: resumeFileId, batchId: batch?.batchId, createdBy: batch?.createdBy },
+      data: { resumeFileId, activeKey: resumeFileId, batchId: batch?.batchId, createdBy: batch?.createdBy, lang: batch?.lang ?? 'zh' },
     })
     return { queued: true }
   } catch (e) {

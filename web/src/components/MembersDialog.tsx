@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
-import { api, ApiError, type JobMember } from '@/lib/api'
+import { api, type JobMember } from '@/lib/api'
+import { errorMessage } from '@/lib/errors'
+import { useI18n } from '@/i18n'
+import { userName } from '@/lib/values'
+import { useAuth } from '@ai-resume-screener/auth-client-web'
 
 /**
  * 岗位参与人。**可见性的唯一入口** —— 加进来的人才看得到这个岗位下的候选人。
@@ -14,6 +18,8 @@ export function MembersDialog({
   jobTitle: string
   onClose: () => void
 }) {
+  const { t } = useI18n()
+  const { isLocal } = useAuth()
   const [members, setMembers] = useState<JobMember[]>([])
   const [canManage, setCanManage] = useState(false)
   const [candidates, setCandidates] = useState<Array<{ id: string; name: string; email: string | null }>>([])
@@ -39,10 +45,10 @@ export function MembersDialog({
         setCanManage(m.canManage)
         setCandidates(us)
       })
-      .catch(() => { if (alive) setError('加载失败') })
+      .catch(() => { if (alive) setError(t('members.loadFailed')) })
       .finally(() => { if (alive) setLoading(false) })
     return () => { alive = false }
-  }, [jobId])
+  }, [jobId, t])
 
   const act = useCallback(async (p: Promise<unknown>) => {
     setError(null)
@@ -51,9 +57,9 @@ export function MembersDialog({
       await reload()
     } catch (e) {
       // 静默失败最糟:以为加上了,实际没有,而可见性正是靠这个决定的。
-      setError(e instanceof ApiError ? e.message : '操作失败，请重试')
+      setError(errorMessage(e, t))
     }
-  }, [reload])
+  }, [reload, t])
 
   const memberIds = new Set(members.map((m) => m.userId))
   const addable = candidates.filter((c) => !memberIds.has(c.id))
@@ -66,27 +72,27 @@ export function MembersDialog({
       >
         {/* 标题固顶 / 按钮固底 / 中间滚动 */}
         <div className="shrink-0 border-b border-line px-5 py-3.5">
-          <h2 className="text-sm font-semibold">参与人 · {jobTitle}</h2>
-          <p className="mt-0.5 text-xs text-fg-faint">只有参与人能看到这个岗位下的候选人与简历</p>
+          <h2 className="text-sm font-semibold">{t('members.title', { job: jobTitle })}</h2>
+          <p className="mt-0.5 text-xs text-fg-faint">{t('members.subtitle')}</p>
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-3">
           {loading ? (
-            <p className="py-8 text-center text-sm text-fg-faint">加载中…</p>
+            <p className="py-8 text-center text-sm text-fg-faint">{t('common.loading')}</p>
           ) : (
             <>
               <ul className="space-y-1.5">
                 {members.map((m) => (
                   <li key={m.userId} className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-surface">
-                    <span className="min-w-0 flex-1 truncate text-sm">{m.name}</span>
+                    <span className="min-w-0 flex-1 truncate text-sm">{userName(m.name, isLocal, t)}</span>
                     {m.role === 'owner' ? (
-                      <span className="shrink-0 rounded bg-surface px-1.5 py-0.5 text-[10px] text-fg-muted">负责人</span>
+                      <span className="shrink-0 rounded bg-surface px-1.5 py-0.5 text-[10px] text-fg-muted">{t('members.owner')}</span>
                     ) : null}
                     {canManage && m.role !== 'owner' ? (
                       <button
                         onClick={() => void act(api.removeMember(jobId, m.userId))}
                         className="shrink-0 text-xs text-fg-faint hover:text-danger-fg"
-                      >移除</button>
+                      >{t('members.remove')}</button>
                     ) : null}
                   </li>
                 ))}
@@ -94,10 +100,10 @@ export function MembersDialog({
 
               {canManage ? (
                 <div className="mt-4 border-t border-line pt-3">
-                  <p className="mb-1.5 text-xs text-fg-faint">添加参与人</p>
+                  <p className="mb-1.5 text-xs text-fg-faint">{t('members.addTitle')}</p>
                   {addable.length === 0 ? (
                     <p className="text-xs text-fg-faint">
-                      没有可添加的人。让对方先打开一次本产品（登录后会自动出现在这里）。
+                      {t('members.noneAddable')}
                     </p>
                   ) : (
                     <ul className="space-y-1">
@@ -107,7 +113,7 @@ export function MembersDialog({
                           <button
                             onClick={() => void act(api.addMember(jobId, c.id))}
                             className="shrink-0 rounded border border-line px-2 py-0.5 text-xs hover:bg-bg"
-                          >添加</button>
+                          >{t('members.add')}</button>
                         </li>
                       ))}
                     </ul>
@@ -124,7 +130,7 @@ export function MembersDialog({
 
         <div className="shrink-0 border-t border-line px-5 py-3 text-right">
           <button onClick={onClose} className="rounded-lg border border-line px-3 py-1.5 text-sm hover:bg-surface">
-            关闭
+            {t('common.close')}
           </button>
         </div>
       </div>

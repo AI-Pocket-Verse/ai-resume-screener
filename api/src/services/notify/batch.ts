@@ -4,6 +4,7 @@ import { env } from '../../env.js'
 import { buildEvalDoneCard, buildParseDoneCard } from './cards.js'
 import { pickCurrent } from '../evaluate/current.js'
 import { isPushable, pushCard } from './gateway.js'
+import { parseLang } from '../../utils/lang.js'
 
 /**
  * 批次完成通知。
@@ -32,7 +33,7 @@ export async function notifyParseBatchIfDone(batchId: string | null, log?: Fasti
 
     const jobs = await prisma.parseJob.findMany({
       where: { batchId },
-      select: { status: true, createdBy: true, resumeFileId: true },
+      select: { status: true, createdBy: true, resumeFileId: true, lang: true },
     })
     if (!jobs.length) return
     const openId = jobs[0]!.createdBy
@@ -60,7 +61,7 @@ export async function notifyParseBatchIfDone(batchId: string | null, log?: Fasti
       failed: jobs.filter((j) => j.status === 'failed').length,
       injectionSuspected,
       jobUrl: jobUrl(),
-    }))
+    }, parseLang(jobs[0]!.lang)))
   } catch (e) {
     log?.warn?.({ err: e, batchId }, '[notify] 解析完成通知失败')
   }
@@ -77,11 +78,12 @@ export async function notifyEvalBatchIfDone(batchId: string | null, log?: Fastif
 
     const jobs = await prisma.evalJob.findMany({
       where: { batchId },
-      select: { status: true, createdBy: true, applicationId: true },
+      select: { status: true, createdBy: true, applicationId: true, lang: true },
     })
     if (!jobs.length) return
     const openId = jobs[0]!.createdBy
     if (!isPushable(openId)) return
+    const lang = parseLang(jobs[0]!.lang)
 
     const application = await prisma.application.findUnique({
       where: { id: jobs[0]!.applicationId },
@@ -116,13 +118,13 @@ export async function notifyEvalBatchIfDone(batchId: string | null, log?: Fastif
     }
 
     await pushCard(openId, buildEvalDoneCard({
-      jobTitle: application?.job.title ?? '岗位',
+      jobTitle: application?.job.title ?? (lang === 'en' ? 'Job' : '岗位'),
       total: jobs.length,
       done: jobs.filter((j) => j.status === 'done').length,
       failed: jobs.filter((j) => j.status === 'failed').length,
       grades,
       jobUrl: jobUrl(application?.jobId),
-    }))
+    }, lang))
   } catch (e) {
     log?.warn?.({ err: e, batchId }, '[notify] 分析完成通知失败')
   }

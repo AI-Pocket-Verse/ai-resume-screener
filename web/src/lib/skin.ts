@@ -1,13 +1,16 @@
 import { useState } from 'react'
 
 import type { UserMenuItem } from '@ai-resume-screener/auth-client-web'
-import { SKINS, SKIN_LABELS, getSkin, setSkin } from '@ai-resume-screener/design-tokens'
+import { SKINS, getSkin, setSkin } from '@ai-resume-screener/design-tokens'
 
-/** 皮肤切换项，挂进右上角 UserMenu。 */
+import { useI18n } from '@/i18n'
+
+/** 皮肤切换项，挂进左下角 UserMenu。 */
 export function useSkinMenuItems(): UserMenuItem[] {
+  const { t } = useI18n()
   const [current, setCurrent] = useState(getSkin)
   return SKINS.map((s) => ({
-    label: `皮肤：${SKIN_LABELS[s]}${s === current ? ' ✓' : ''}`,
+    label: `${t('menu.skin', { name: t(`skin.${s}`) })}${s === current ? ' ✓' : ''}`,
     onClick: () => {
       setSkin(s)
       setCurrent(s)

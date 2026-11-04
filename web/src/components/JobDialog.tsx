@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import { cn } from '@/lib/cn'
 import { api, ApiError, type JobDetail, type JobSummary, type Team } from '@/lib/api'
+import { useI18n } from '@/i18n'
+import { errorMessage } from '@/lib/errors'
+import { teamName } from '@/lib/values'
 import { Select } from './Select'
 
 /**
@@ -19,6 +22,7 @@ export function JobDialog({
   onSaved: (jobId: string) => void
   onDeleted: () => void
 }) {
+  const { t } = useI18n()
   const [teamId, setTeamId] = useState<string | null>(editing?.team.id ?? teams[0]?.id ?? null)
   const [title, setTitle] = useState(editing?.title ?? '')
   const [location, setLocation] = useState(editing?.location ?? '')
@@ -44,7 +48,7 @@ export function JobDialog({
 
   async function save() {
     if (!teamId || !title.trim()) {
-      setError('团队与岗位名称是必填的')
+      setError(t('job.required'))
       return
     }
     setSaving(true)
@@ -66,7 +70,7 @@ export function JobDialog({
       }
       onClose()
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : '保存失败')
+      setError(errorMessage(e, t, 'error.saveFailed'))
     } finally {
       setSaving(false)
     }
@@ -84,7 +88,7 @@ export function JobDialog({
         setConfirmDelete({ count: Number(e.extra?.candidateCount ?? 0) })
         return
       }
-      setError(e instanceof ApiError ? e.message : '删除失败')
+      setError(errorMessage(e, t, 'error.deleteFailed'))
     }
   }
 
@@ -97,37 +101,37 @@ export function JobDialog({
         className="flex max-h-[85vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl bg-elevated shadow-lg"
       >
         <div className="flex shrink-0 items-center border-b border-line px-5 py-3.5">
-          <h2 className="text-base font-semibold">{editing ? '编辑岗位' : '新建岗位'}</h2>
-          <button onClick={onClose} className="ml-auto text-fg-faint hover:text-fg" aria-label="关闭">×</button>
+          <h2 className="text-base font-semibold">{editing ? t('job.dialog.edit') : t('job.dialog.create')}</h2>
+          <button onClick={onClose} className="ml-auto text-fg-faint hover:text-fg" aria-label={t('common.close')}>×</button>
         </div>
 
         <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
           <div>
-            <label className="mb-1 block text-xs text-fg-muted">团队</label>
+            <label className="mb-1 block text-xs text-fg-muted">{t('job.team')}</label>
             <Select
               value={teamId}
               onChange={setTeamId}
-              placeholder="选择团队"
-              options={teams.map((t) => ({ value: t.id, label: t.name, hint: `${t._count.jobs} 个岗位` }))}
+              placeholder={t('job.team.placeholder')}
+              options={teams.map((tm) => ({ value: tm.id, label: teamName(tm, t), hint: t('job.team.hint', { n: tm._count.jobs }) }))}
             />
           </div>
 
           <div>
-            <label className="mb-1 block text-xs text-fg-muted">岗位名称</label>
-            <input value={title} onChange={(e) => setTitle(e.target.value)} className={field} placeholder="如：高级后端开发工程师" />
+            <label className="mb-1 block text-xs text-fg-muted">{t('job.name')}</label>
+            <input value={title} onChange={(e) => setTitle(e.target.value)} className={field} placeholder={t('job.name.placeholder')} />
           </div>
 
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="mb-1 block text-xs text-fg-muted">地点</label>
-              <input value={location} onChange={(e) => setLocation(e.target.value)} className={field} placeholder="深圳" />
+              <label className="mb-1 block text-xs text-fg-muted">{t('job.location')}</label>
+              <input value={location} onChange={(e) => setLocation(e.target.value)} className={field} placeholder={t('job.location.placeholder')} />
             </div>
             <div>
-              <label className="mb-1 block text-xs text-fg-muted">职级</label>
-              <input value={level} onChange={(e) => setLevel(e.target.value)} className={field} placeholder="高级" />
+              <label className="mb-1 block text-xs text-fg-muted">{t('job.level')}</label>
+              <input value={level} onChange={(e) => setLevel(e.target.value)} className={field} placeholder={t('job.level.placeholder')} />
             </div>
             <div>
-              <label className="mb-1 block text-xs text-fg-muted">招聘人数</label>
+              <label className="mb-1 block text-xs text-fg-muted">{t('job.headcount')}</label>
               <input
                 type="number" min={1} value={headcount}
                 onChange={(e) => setHeadcount(e.target.value)}
@@ -138,31 +142,31 @@ export function JobDialog({
 
           {editing ? (
             <div>
-              <label className="mb-1 block text-xs text-fg-muted">状态</label>
+              <label className="mb-1 block text-xs text-fg-muted">{t('job.status')}</label>
               <Select
                 value={status}
                 onChange={setStatus}
                 options={[
-                  { value: 'open', label: '招聘中' },
-                  { value: 'paused', label: '暂停', hint: '不再接收新简历' },
-                  { value: 'closed', label: '已关闭', hint: '已招到人 / 需求取消' },
+                  { value: 'open', label: t('jobStatus.open') },
+                  { value: 'paused', label: t('jobStatus.paused'), hint: t('job.status.paused.hint') },
+                  { value: 'closed', label: t('jobStatus.closed'), hint: t('job.status.closed.hint') },
                 ]}
               />
             </div>
           ) : null}
 
           <div>
-            <label className="mb-1 block text-xs text-fg-muted">JD 原文</label>
+            <label className="mb-1 block text-xs text-fg-muted">{t('job.jd')}</label>
             <textarea
               value={jdRaw}
               onChange={(e) => setJdRaw(e.target.value)}
               rows={10}
-              placeholder="把 JD 粘进来。评分卡会按它生成 —— JD 越具体，评分标准越可判断。"
+              placeholder={t('job.jd.placeholder')}
               className="w-full resize-y rounded-lg border border-line px-3 py-2 text-sm leading-relaxed outline-none focus:border-accent focus:ring-2 focus:ring-accent/15"
             />
             {editing ? (
               <p className="mt-1 text-xs text-fg-faint">
-                改了 JD 不会自动重算评分卡；需要的话去评分卡弹窗点「按 JD 重新生成」。
+                {t('job.jd.editHint')}
               </p>
             ) : null}
           </div>
@@ -172,14 +176,14 @@ export function JobDialog({
           {confirmDelete ? (
             <div className="rounded-lg border border-danger-line bg-danger-bg p-3">
               <p className="text-sm text-danger-fg">
-                该岗位下还有 {confirmDelete.count} 位候选人的投递与评估记录，删除后这些记录一并消失。
+                {t('job.deleteConfirm', { n: confirmDelete.count })}
               </p>
               <p className="mt-1 text-xs text-fg-muted">
-                候选人本身不会被删除（他们可能还投了别的岗位）。要彻底删人请去候选人列表。
+                {t('job.deleteNote')}
               </p>
               <div className="mt-2 flex gap-2">
-                <button onClick={() => setConfirmDelete(null)} className="rounded border border-line bg-bg px-2.5 py-1 text-xs">取消</button>
-                <button onClick={() => void remove(true)} className="rounded bg-danger-fg px-2.5 py-1 text-xs text-bg">确认删除</button>
+                <button onClick={() => setConfirmDelete(null)} className="rounded border border-line bg-bg px-2.5 py-1 text-xs">{t('common.cancel')}</button>
+                <button onClick={() => void remove(true)} className="rounded bg-danger-fg px-2.5 py-1 text-xs text-bg">{t('job.confirmDelete')}</button>
               </div>
             </div>
           ) : null}
@@ -188,13 +192,13 @@ export function JobDialog({
         <div className="flex shrink-0 items-center gap-2 border-t border-line px-5 py-3">
           {editing ? (
             <button onClick={() => void remove(false)} className="text-xs text-danger-fg hover:underline">
-              删除岗位
+              {t('job.delete')}
             </button>
           ) : null}
           <div className="ml-auto flex gap-2">
-            <button onClick={onClose} className="rounded-lg border border-line px-3 py-1.5 text-sm hover:bg-surface">取消</button>
+            <button onClick={onClose} className="rounded-lg border border-line px-3 py-1.5 text-sm hover:bg-surface">{t('common.cancel')}</button>
             <button onClick={() => void save()} disabled={saving} className="rounded-lg bg-accent px-4 py-1.5 text-sm text-accent-fg disabled:opacity-40">
-              {saving ? '保存中…' : '保存'}
+              {saving ? t('common.saving') : t('common.save')}
             </button>
           </div>
         </div>

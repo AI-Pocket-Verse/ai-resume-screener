@@ -2,6 +2,7 @@ import { chatJson } from '@ai-resume-screener/llm-kit'
 import {
   DeepExtras,
   EvaluationOutput,
+  EvaluationOutputEn,
   Scorecard,
   type DeepExtras as DeepExtrasT,
   type EvaluationOutput as EvaluationOutputT,
@@ -14,6 +15,7 @@ import { judgeStructuredGates } from './gates.js'
 import { computeGrade, type GradeResult } from './grade.js'
 import type { MergedResume } from './merge.js'
 import { buildEvalPrompt, buildScorecardDraftPrompt } from './prompt.js'
+import type { Lang } from '../../utils/lang.js'
 
 export interface EvaluateInput {
   jobTitle: string
@@ -22,6 +24,8 @@ export interface EvaluateInput {
   scorecard: ScorecardT
   resume: MergedResume
   tier: 'screen' | 'deep'
+  /** 结论与判定说明的语言。缺省中文。 */
+  lang?: Lang
 }
 
 export interface EvaluateResult {
@@ -34,12 +38,14 @@ export interface EvaluateResult {
   rawText: string
   latencyMs: number
   model: string | null
+  /** 实际使用的模型通道(claude / anthropic / openai),随评估落库。 */
+  providerId: string
 }
 
 /** 评估一份简历。**绝不抛** —— 批量跑时一份出问题不该带崩整批。 */
 export async function evaluateResume(input: EvaluateInput): Promise<EvaluateResult> {
   // 结构化门槛先由代码判掉,只把自然语言的交给模型。
-  const { results: codeGates, nlGates } = judgeStructuredGates(input.scorecard.gates, input.resume)
+  const { results: codeGates, nlGates } = judgeStructuredGates(input.scorecard.gates, input.resume, input.lang ?? 'zh')
 
   const provider = getProvider(input.tier === 'deep' ? 'deep' : 'screen')
   const prompt = buildEvalPrompt({ ...input, nlGates })
@@ -59,14 +65,15 @@ export async function evaluateResume(input: EvaluateInput): Promise<EvaluateResu
   }
   const latencyMs = Date.now() - t0
   const model = provider.lastModel
+  const providerId = provider.name
   const fail = (error: string): EvaluateResult => ({
     output: null, deep: null, gateResults: codeGates, grade: null,
-    error, rawText: r?.rawText ?? '', latencyMs, model,
+    error, rawText: r?.rawText ?? '', latencyMs, model, providerId,
   })
 
   if (r.error || !r.data) return fail(r.error ?? '模型没有返回可解析的 JSON')
 
-  const parsed = EvaluationOutput.safeParse(r.data)
+  const parsed = (input.lang === 'en' ? EvaluationOutputEn : EvaluationOutput).safeParse(r.data)
   if (!parsed.success) {
     const issues = parsed.error.issues.slice(0, 5)
       .map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')
@@ -94,11 +101,11 @@ export async function evaluateResume(input: EvaluateInput): Promise<EvaluateResu
   // 一个维度都对不上 = 模型答的和评分卡不是一回事,当失败重试而不是出个 0 分。
   if (!grade) return fail('模型返回的维度与评分卡完全不匹配(可能是评分卡的 key 改过)')
 
-  return { output, deep, gateResults, grade, error: null, rawText: r.rawText, latencyMs, model }
+  return { output, deep, gateResults, grade, error: null, rawText: r.rawText, latencyMs, model, providerId }
 }
 
 /** JD → 评分卡草稿。生成完由 HR 人工编辑,不直接生效。 */
-export async function draftScorecard(jobTitle: string, jdRaw: string): Promise<{
+export async function draftScorecard(jobTitle: string, jdRaw: string, lang: Lang = 'zh'): Promise<{
   scorecard: ScorecardT | null
   error: string | null
   rawText: string
@@ -108,7 +115,7 @@ export async function draftScorecard(jobTitle: string, jdRaw: string): Promise<{
   const release = await llmSemaphore.acquire()
   let r
   try {
-    r = await chatJson<unknown>(provider, buildScorecardDraftPrompt(jobTitle, jdRaw), ac.signal)
+    r = await chatJson<unknown>(provider, buildScorecardDraftPrompt(jobTitle, jdRaw, lang), ac.signal)
   } finally {
     release()
   }

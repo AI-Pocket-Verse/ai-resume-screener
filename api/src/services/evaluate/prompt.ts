@@ -3,19 +3,47 @@ import { makeFence, wrap } from '../parse/fence.js'
 import {
   DeepExtras,
   EvaluationOutput,
+  EvaluationOutputEn,
   Scorecard,
   type Dimension,
   type Gate,
 } from '@ai-resume-screener/shared'
 import { redactForEvaluation } from '../compliance/redact.js'
 import { modelJsonSchema } from '../json-schema.js'
+import type { Lang } from '../../utils/lang.js'
 import type { MergedResume } from './merge.js'
 
 /** 改这个 = 声明「以后的评分和以前的不可比」。随每条 Evaluation 落库。 */
 export const EVAL_PROMPT_VERSION = 'v1'
 
+/** 落库的 prompt 版本:英文输出追加了语言要求,单独标记,便于区分两种 prompt 的结果。 */
+export function evalPromptVersion(lang: Lang): string {
+  return lang === 'en' ? `${EVAL_PROMPT_VERSION}-en` : EVAL_PROMPT_VERSION
+}
+
+// 英文界面发起时追加在 system prompt 末尾。中文保持原 prompt 不变(不影响已有评分口径)。
+// quote 必须是简历原文,所以明确要求不翻译;字段名、枚举值照 schema 原样输出。
+const EVAL_OUTPUT_EN = `
+
+【输出语言】
+JSON 里所有写给人看的自然语言内容(summary、各条 reason、highlights、concerns、
+面试追问及其理由、倾向陈述的依据与顾虑)一律用英文(English)书写。
+summary 控制在 40 个英文单词左右。
+evidence.quote 仍必须是简历原文的准确摘录,保持原文语言,不要翻译。
+英文正文里提到简历数据中的中文词(如技能名「性能优化」)时,直接写英文意思,不要夹带中文原文。
+字段名与枚举值严格按 JSON Schema 原样输出。`
+
+const DRAFT_OUTPUT_EN = `
+
+【输出语言】
+评分卡里所有写给人看的文字(维度 label、各档 anchors、gate 的 label 与 nl)一律用英文(English)书写。
+字段名与 key 按 JSON Schema 要求输出;key 用英文小写加下划线。`
+
 const SCREEN_SCHEMA = modelJsonSchema(EvaluationOutput)
 const DEEP_SCHEMA = modelJsonSchema(EvaluationOutput.extend(DeepExtras.shape))
+// 英文输出只放宽 summary 长度,见 EvaluationOutputEn。
+const SCREEN_SCHEMA_EN = modelJsonSchema(EvaluationOutputEn)
+const DEEP_SCHEMA_EN = modelJsonSchema(EvaluationOutputEn.extend(DeepExtras.shape))
 
 const SYSTEM = `你是招聘评估助手。严格按给定的评分卡打分,每条结论都必须能在简历原文中找到依据。
 只输出一个 JSON 对象,不要任何解释文字,不要 markdown 代码围栏。
@@ -59,6 +87,8 @@ export interface BuildEvalPromptInput {
   nlGates: Gate[]
   resume: MergedResume
   tier: 'screen' | 'deep'
+  /** 结论用哪种语言写。缺省中文。 */
+  lang?: Lang
 }
 
 export function buildEvalPrompt(input: BuildEvalPromptInput): ChatPrompt {
@@ -96,7 +126,8 @@ export function buildEvalPrompt(input: BuildEvalPromptInput): ChatPrompt {
   }
 
   parts.push('【输出 JSON Schema】')
-  parts.push(tier === 'deep' ? DEEP_SCHEMA : SCREEN_SCHEMA)
+  const en = input.lang === 'en'
+  parts.push(tier === 'deep' ? (en ? DEEP_SCHEMA_EN : DEEP_SCHEMA) : (en ? SCREEN_SCHEMA_EN : SCREEN_SCHEMA))
   parts.push('')
   parts.push('【候选人信息】(已合并人工修正;derived 是系统按规则算的,不要重算)')
   // 随机定界,与解析侧同一套做法。这里装的虽是解析后的 JSON,但**字段值仍是
@@ -111,7 +142,7 @@ export function buildEvalPrompt(input: BuildEvalPromptInput): ChatPrompt {
   parts.push('')
   parts.push(fence.notice)
 
-  return { systemPrompt: SYSTEM, history: [], userMessage: parts.join('\n') }
+  return { systemPrompt: input.lang === 'en' ? SYSTEM + EVAL_OUTPUT_EN : SYSTEM, history: [], userMessage: parts.join('\n') }
 }
 
 // ── JD → 评分卡草稿 ────────────────────────────────────────────────
@@ -135,12 +166,12 @@ const DRAFT_SYSTEM = `你是招聘评分卡设计助手。根据 JD 生成一张
 // 不需要中间再转一层。
 const SCORECARD_SCHEMA = modelJsonSchema(Scorecard)
 
-export function buildScorecardDraftPrompt(jobTitle: string, jdRaw: string): ChatPrompt {
+export function buildScorecardDraftPrompt(jobTitle: string, jdRaw: string, lang: Lang = 'zh'): ChatPrompt {
   // JD 是内部人写的,风险远低于简历;但同一套定界是零成本的,而且 JD 常常
   // 是从别处粘来的,粘进什么并不总是可控。
   const fence = makeFence('JD')
   return {
-    systemPrompt: DRAFT_SYSTEM,
+    systemPrompt: lang === 'en' ? DRAFT_SYSTEM + DRAFT_OUTPUT_EN : DRAFT_SYSTEM,
     history: [],
     userMessage: [
       `【岗位】${jobTitle}`,

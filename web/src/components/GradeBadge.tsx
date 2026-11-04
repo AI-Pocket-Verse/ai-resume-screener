@@ -1,4 +1,5 @@
 import { cn } from '@/lib/cn'
+import { useI18n } from '@/i18n'
 import type { Grade } from '@/lib/api'
 
 const STYLE: Record<Grade, string> = {
@@ -30,8 +31,9 @@ export function GradeBadge({ grade, size = 'md' }: { grade: Grade | null; size?:
 
 /** 总分。**取整到个位、小字、灰色** —— 绝不出现 87.3 那种伪精度。 */
 export function ScoreText({ score, className }: { score: number | null; className?: string }) {
+  const { t } = useI18n()
   if (score == null) return null
-  return <span className={cn('text-xs tabular-nums text-fg-faint', className)}>{Math.round(score)} 分</span>
+  return <span className={cn('text-xs tabular-nums text-fg-faint', className)}>{t('common.score', { n: Math.round(score) })}</span>
 }
 
 /** 维度得分条。按分数配色,与档位色系一致(5/4 好、3 中、2/1 差)。 */

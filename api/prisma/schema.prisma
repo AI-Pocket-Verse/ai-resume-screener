@@ -284,6 +284,8 @@ model ParseJob {
   batchId   String?
   /// 发起人的 ssoId(飞书 open_id)。通知要推给他,而不是推给全体。
   createdBy String?
+  /// 上传时的界面语言(zh | en),只决定完成通知卡片的语言;解析本身与语言无关。
+  lang      String @default("zh")
 
   resumeFile ResumeFile @relation(fields: [resumeFileId], references: [id], onDelete: Cascade)
 
@@ -428,6 +430,8 @@ model EvalJob {
   batchId   String?
   /// 发起人的 ssoId(飞书 open_id)。通知要推给他,而不是推给全体。
   createdBy String?
+  /// 发起时的界面语言(zh | en)。AI 生成的结论用这种语言写;任务排队后才执行,所以要记下来。
+  lang      String @default("zh")
 
   application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
 

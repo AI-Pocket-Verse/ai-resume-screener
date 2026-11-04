@@ -1,14 +1,16 @@
 import { useMemo, useState } from 'react'
 import { cn } from '@/lib/cn'
 import type { CandidateRow } from '@/lib/api'
+import { useI18n } from '@/i18n'
+import { decisionLabel } from '@/lib/values'
 // 筛选/计数/徽标逻辑抽在 lib/list 里单测 —— 这些分支是前端真正容易算错的地方。
 import { FILTERS, countByFilter, filterRows, rowBadges, type Filter } from '@/lib/list'
 import { GradeBadge, ScoreText } from './GradeBadge'
 
-const DECISION_LABEL: Record<string, { text: string; cls: string }> = {
-  pass: { text: '通过', cls: 'bg-grade-a-bg text-grade-a' },
-  reject: { text: '淘汰', cls: 'bg-gate-fail-bg text-gate-fail' },
-  hold: { text: '待定', cls: 'bg-grade-c-bg text-grade-c' },
+const DECISION_CLS: Record<string, string> = {
+  pass: 'bg-grade-a-bg text-grade-a',
+  reject: 'bg-gate-fail-bg text-gate-fail',
+  hold: 'bg-grade-c-bg text-grade-c',
 }
 
 export function CandidateList({
@@ -20,6 +22,7 @@ export function CandidateList({
   selection: Set<string>
   onToggleSelect: (id: string) => void
 }) {
+  const { t } = useI18n()
   const [filter, setFilter] = useState<Filter>('all')
   const [q, setQ] = useState('')
 
@@ -33,7 +36,7 @@ export function CandidateList({
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="搜索姓名或公司"
+          placeholder={t('list.search')}
           className="h-9 w-full rounded-lg border border-line bg-bg px-3 text-sm outline-none placeholder:text-fg-faint focus:border-accent focus:ring-2 focus:ring-accent/15"
         />
         <div className="mt-2.5 flex flex-wrap gap-1.5">
@@ -48,7 +51,7 @@ export function CandidateList({
                   : 'border-line text-fg-muted hover:bg-surface',
               )}
             >
-              {f.label}
+              {t(f.label)}
               {counts[f.key] ? <span className="ml-1 opacity-60">{counts[f.key]}</span> : null}
             </button>
           ))}
@@ -56,13 +59,13 @@ export function CandidateList({
       </div>
 
       <div className="flex items-center justify-between px-3 py-2 text-xs text-fg-faint">
-        <span>共 {filtered.length} 人</span>
-        {selection.size > 0 ? <span className="text-grade-b">已选 {selection.size}</span> : null}
+        <span>{t('list.total', { n: filtered.length })}</span>
+        {selection.size > 0 ? <span className="text-grade-b">{t('list.selected', { n: selection.size })}</span> : null}
       </div>
 
       <div className="flex-1 overflow-y-auto px-2 pb-3">
         {filtered.length === 0 ? (
-          <div className="mt-16 text-center text-sm text-fg-faint">没有符合条件的候选人</div>
+          <div className="mt-16 text-center text-sm text-fg-faint">{t('list.empty')}</div>
         ) : (
           filtered.map((r) => (
             <CandidateCard
@@ -85,7 +88,8 @@ function CandidateCard({
 }: {
   row: CandidateRow; active: boolean; checked: boolean; onSelect: () => void; onToggle: () => void
 }) {
-  const decision = row.hrDecision ? DECISION_LABEL[row.hrDecision] : null
+  const { t } = useI18n()
+  const decisionCls = row.hrDecision ? DECISION_CLS[row.hrDecision] : undefined
 
   return (
     <div
@@ -109,14 +113,14 @@ function CandidateCard({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="truncate font-medium">{row.name}</span>
-            {decision ? (
-              <span className={cn('shrink-0 rounded px-1.5 py-0.5 text-[11px]', decision.cls)}>{decision.text}</span>
+            {row.hrDecision && decisionCls ? (
+              <span className={cn('shrink-0 rounded px-1.5 py-0.5 text-[11px]', decisionCls)}>{decisionLabel(row.hrDecision, t)}</span>
             ) : null}
           </div>
           <div className="mt-0.5 truncate text-xs text-fg-muted">
             {row.currentCompany ?? '—'}
-            {row.currentIsPast && row.currentCompany ? <span className="text-fg-faint">（上一份）</span> : null}
-            {row.totalYears != null ? ` · ${row.totalYears} 年` : ''}
+            {row.currentIsPast && row.currentCompany ? <span className="text-fg-faint">{t('list.past')}</span> : null}
+            {row.totalYears != null ? t('list.years', { n: row.totalYears }) : ''}
           </div>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">
@@ -130,7 +134,7 @@ function CandidateCard({
       ) : null}
 
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
-        {rowBadges(row).map((b) => (
+        {rowBadges(row, t).map((b) => (
           <span
             key={b.text}
             className={cn(

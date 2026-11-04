@@ -76,6 +76,26 @@ describe('buildEvalDoneCard', () => {
   })
 })
 
+describe('卡片语言跟随发起人的界面语言', () => {
+  const parse = { total: 3, parsed: 2, failed: 1, injectionSuspected: 1, jobUrl: 'https://x/' }
+  const evalS = { jobTitle: 'Senior Backend Engineer', total: 1, done: 1, failed: 0, grades: { A: 1 }, jobUrl: 'https://x/?job=1' }
+  it('缺省与 zh 完全一致(加语言切换前的中文卡片)', () => {
+    expect(buildParseDoneCard(parse, 'zh')).toEqual(buildParseDoneCard(parse))
+    expect(buildEvalDoneCard(evalS, 'zh')).toEqual(buildEvalDoneCard(evalS))
+  })
+  it('en:整张卡片没有中文,单复数正确,链接与颜色不变', () => {
+    const p = buildParseDoneCard(parse, 'en')
+    const e = buildEvalDoneCard(evalS, 'en')
+    for (const c of [p, e]) expect(texts(c)).not.toMatch(/[一-龥]/)
+    expect(texts(p)).toContain('3 resumes parsed.')
+    expect(texts(e)).toContain('Senior Backend Engineer\\": 1 resume analyzed.')
+    expect(texts(e)).toContain('Grade A: 1')
+    expect(texts(e)).toContain('for reference only')
+    expect(texts(p)).toContain('orange')
+    expect(texts(e)).toContain('https://x/?job=1')
+  })
+})
+
 describe('isPushable', () => {
   // 飞书只按 open_id 投递。别的来源的 ssoId 推不动,直接跳过而不是报错。
   it('只有 ou_ 开头的 open_id 能推', () => {

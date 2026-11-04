@@ -1,6 +1,8 @@
 // API 客户端。同源访问,所以路径是相对的 —— 开发时 vite proxy 转发到 4070,
 // 生产由 nginx 反代。
 
+import { currentLang } from '@/i18n/lang'
+
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
@@ -22,12 +24,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
     headers: {
       ...(init?.body && !(init.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}),
+      // 界面语言:后端据此决定 AI 生成内容(评估结论、评分卡草稿)用哪种语言写。
+      'X-Lang': currentLang(),
       ...init?.headers,
     },
   })
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
-    throw new ApiError(res.status, body.error ?? 'unknown', body.message ?? `请求失败(${res.status})`, body)
+    throw new ApiError(res.status, body.error ?? 'unknown', body.message ?? `Request failed (${res.status})`, body)
   }
   return res.status === 204 ? (undefined as T) : ((await res.json()) as T)
 }
@@ -40,7 +44,11 @@ const del = <T>(p: string) => request<T>(p, { method: 'DELETE' })
 
 // ── 类型(与 api 侧路由返回值对应)────────────────────────────────
 
-export interface Team { id: string; name: string; description: string | null; _count: { jobs: number } }
+export interface Team {
+  id: string; name: string; description: string | null; _count: { jobs: number }
+  /** 系统自动建的默认团队为 'system'。 */
+  ownerId?: string
+}
 
 export interface JobSummary {
   id: string; title: string; status: string; location: string | null; level: string | null

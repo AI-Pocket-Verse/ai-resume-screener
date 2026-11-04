@@ -5,6 +5,7 @@ import { prisma } from '../db.js'
 import { audit } from '../services/compliance/audit.js'
 import { removeOrphanCandidates, removeUnreferencedFiles } from '../services/compliance/purge.js'
 import { draftScorecard } from '../services/evaluate/evaluate.js'
+import { requestLang } from '../utils/lang.js'
 import {
   canAccessJob, canManageJob, currentUser, isSuperAdmin, requireJobAccess, requireJobManage, visibleJobIds,
 } from '../utils/authz.js'
@@ -280,7 +281,7 @@ export async function jobRoutes(app: FastifyInstance) {
     if (!job) return reply.code(404).send({ error: 'not_found' })
     if (!job.jdRaw.trim()) return reply.code(400).send({ error: 'empty_jd', message: '请先填写 JD 原文' })
 
-    const r = await draftScorecard(job.title, job.jdRaw)
+    const r = await draftScorecard(job.title, job.jdRaw, requestLang(req))
     if (!r.scorecard) {
       req.log.warn({ jobId: id, error: r.error }, '[scorecard] 草稿生成失败')
       return reply.code(502).send({ error: 'draft_failed', message: '评分卡草稿生成失败,请重试' })

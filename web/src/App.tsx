@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { AuthProvider } from '@ai-resume-screener/auth-client-web'
 import { Button } from '@/components/Button'
 import { cn } from '@/lib/cn'
-import { api, ApiError, type CandidateRow, type JobSummary, type Me, type Scorecard, type Team } from '@/lib/api'
+import { api, type CandidateRow, type JobSummary, type Me, type Scorecard, type Team } from '@/lib/api'
 import { CandidateDetail } from '@/components/CandidateDetail'
 import { CandidateList } from '@/components/CandidateList'
 import { JobNav } from '@/components/JobNav'
@@ -12,6 +12,9 @@ import { JobDialog } from '@/components/JobDialog'
 import { MembersDialog } from '@/components/MembersDialog'
 import { Shell } from '@/components/Shell'
 import { analyzeTargets, isUnanalyzed } from '@/lib/list'
+import { errorMessage } from '@/lib/errors'
+import { useI18n } from '@/i18n'
+import { teamName } from '@/lib/values'
 
 // 登录可选。不设置 → 本地单用户模式。反向代理把同源 /auth/* 转给 feishu-sso 时，
 // 设置 VITE_SSO_BASE=/auth（写在 web/.env.local 或构建时注入），api 也要同时设置 WHOAMI_URL。
@@ -27,6 +30,7 @@ export function App() {
 }
 
 function Workspace() {
+  const { t } = useI18n()
   const [teams, setTeams] = useState<Team[]>([])
   const [jobs, setJobs] = useState<JobSummary[]>([])
   const [job, setJob] = useState<JobSummary | null>(null)
@@ -80,9 +84,9 @@ function Workspace() {
       })
     } catch {
       setScorecard((s) => ({ ...s, loading: false }))
-      notify('评分卡加载失败')
+      notify(t('app.toast.scorecardLoadFailed'))
     }
-  }, [notify])
+  }, [notify, t])
 
   useEffect(() => {
     Promise.all([api.teams(), api.jobs(), api.me()])
@@ -92,8 +96,8 @@ function Workspace() {
         setMe(m)
         if (j.length) setJob((cur) => cur ?? j[0]!)
       })
-      .catch(() => notify('加载失败，请确认已登录'))
-  }, [notify])
+      .catch(() => notify(t('app.toast.loadFailed')))
+  }, [notify, t])
 
   const reloadRows = useCallback(() => {
     if (!job) return
@@ -124,18 +128,18 @@ function Workspace() {
   const analyze = useCallback(async (applicationIds: string[], tier: 'screen' | 'deep') => {
     if (!applicationIds.length) return
     if (job && !job.hasScorecard) {
-      notify('这个岗位还没有评分卡，先配置再分析')
+      notify(t('app.toast.needScorecard'))
       void openScorecard(job)
       return
     }
     try {
       const r = await api.analyze(applicationIds, tier)
-      notify(r.queued > 0 ? `已加入队列，${r.queued} 份正在分析` : '这些候选人已在分析队列中')
+      notify(r.queued > 0 ? t('app.toast.queued', { n: r.queued }) : t('app.toast.alreadyQueued'))
       reloadRows()
     } catch (e) {
-      notify(e instanceof ApiError ? e.message : '触发分析失败')
+      notify(errorMessage(e, t, 'error.triggerFailed'))
     }
-  }, [job, notify, reloadRows])
+  }, [job, notify, reloadRows, t])
 
   // 「一键分析」= 分析全部【未分析的】,不重跑已分析项 —— 避免误点烧掉一小时算力。
   const unanalyzed = rows.filter(isUnanalyzed)
@@ -144,36 +148,33 @@ function Workspace() {
   const bulkDelete = useCallback(async () => {
     const picked = rows.filter((r) => selection.has(r.applicationId))
     if (!picked.length) return
-    const names = picked.slice(0, 3).map((r) => r.name).join('、')
-    const ok = window.confirm(
-      `彻底删除 ${picked.length} 位候选人（${names}${picked.length > 3 ? ' 等' : ''}）？\n\n` +
-      '将同时删除他们的简历原件、解析结果与全部评估记录，不可撤销。\n' +
-      '（历史备份中的副本不受影响，会随备份保留期自然过期）',
-    )
+    const names = picked.slice(0, 3).map((r) => r.name).join(t('common.listSep')) +
+      (picked.length > 3 ? t('app.confirm.more') : '')
+    const ok = window.confirm(t('app.confirm.bulkDelete', { count: picked.length, names }))
     if (!ok) return
     try {
       const r = await api.bulkDeleteCandidates(picked.map((p) => p.candidateId))
-      notify(`已删除 ${r.deleted} 人，释放 ${(r.bytesFreed / 1024 / 1024).toFixed(1)}MB`)
+      notify(t('app.toast.deleted', { n: r.deleted, mb: (r.bytesFreed / 1024 / 1024).toFixed(1) }))
       setSelection(new Set())
       setSelected(null)
       reloadRows()
     } catch (e) {
-      notify(e instanceof ApiError ? e.message : '删除失败')
+      notify(errorMessage(e, t, 'error.deleteFailed'))
     }
-  }, [rows, selection, notify, reloadRows])
+  }, [rows, selection, notify, reloadRows, t])
 
   // 标题与动作交给外壳的顶栏 —— 页面本体不再自绘 header,也不重复 h1。
   const chrome = {
-    title: job?.title ?? '简历筛选',
-    subtitle: job ? `${job.team.name} · ${rows.length} 位候选人` : '选择一个岗位开始',
+    title: job?.title ?? t('shell.productName'),
+    subtitle: job ? t('app.subtitle', { team: teamName(job.team, t), n: rows.length }) : t('app.subtitle.empty'),
     actions: (
       <>
         {/* 能看到这个岗位 = 你是它的成员,写操作一律放开。 */}
         <Button variant="ghost" size="sm" disabled={!job} onClick={() => setShowUpload((v) => !v)}>
-          上传简历
+          {t('app.btn.upload')}
         </Button>
         <Button variant="ghost" size="sm" disabled={!job} onClick={() => setMembersOpen(true)}>
-          参与人
+          {t('app.btn.members')}
         </Button>
         <Button
           variant="ghost"
@@ -184,7 +185,7 @@ function Workspace() {
           //(别用 grade-c:那是「评级 C」的业务色,不是通用警告色)
           className={cn(job && !job.hasScorecard && 'border-warning-line bg-warning-bg text-warning-fg')}
         >
-          评分卡{job && !job.hasScorecard ? ' · 待配置' : ''}
+          {job && !job.hasScorecard ? t('app.btn.scorecardPending') : t('app.btn.scorecard')}
         </Button>
         {/* 彻底删除不可撤销,且跨岗位候选人只有超管删得干净。 */}
         {canDelete && selection.size > 0 ? (
@@ -194,7 +195,7 @@ function Workspace() {
             onClick={() => void bulkDelete()}
             className="border-danger-line text-danger-fg hover:bg-danger-bg"
           >
-            删除选中 {selection.size}
+            {t('app.btn.deleteSelected', { n: selection.size })}
           </Button>
         ) : null}
         <Button
@@ -202,7 +203,7 @@ function Workspace() {
           disabled={!job || (selection.size === 0 && unanalyzed.length === 0)}
           onClick={() => void analyze(analyzeTargets(rows, selection), 'screen')}
         >
-          {selection.size ? `分析选中 ${selection.size} 份` : `一键分析 ${unanalyzed.length} 份`}
+          {selection.size ? t('app.btn.analyzeSelected', { n: selection.size }) : t('app.btn.analyzeAll', { n: unanalyzed.length })}
         </Button>
       </>
     ),
@@ -250,17 +251,17 @@ function Workspace() {
                 onDecide={(d) => {
                   void api.decide(selected.applicationId, d)
                     .then(() => {
-                      notify(d ? '已记录结论' : '已清除结论')
+                      notify(d ? t('app.toast.decided') : t('app.toast.decisionCleared'))
                       reloadRows()
                     })
                     // 静默失败最糟:HR 以为结论记下了,实际后端没收到。
-                    .catch((e) => notify(e instanceof ApiError ? e.message : '操作失败，请重试'))
+                    .catch((e) => notify(errorMessage(e, t)))
                 }}
                 onChanged={reloadRows}
               />
             ) : (
               <div className="flex flex-1 items-center justify-center text-sm text-fg-faint">
-                从左侧选择一位候选人
+                {t('app.empty.pickCandidate')}
               </div>
             )}
           </div>
@@ -276,7 +277,7 @@ function Workspace() {
             editing={jobDialog.editing}
             onClose={() => setJobDialog({ open: false, editing: null })}
             onSaved={(jobId) => {
-              notify(jobDialog.editing ? '岗位已更新' : '岗位已创建，接下来配置评分卡')
+              notify(jobDialog.editing ? t('app.toast.jobUpdated') : t('app.toast.jobCreated'))
               void api.jobs().then((js) => {
                 setJobs(js)
                 const target = js.find((j) => j.id === jobId)
@@ -291,7 +292,7 @@ function Workspace() {
               })
             }}
             onDeleted={() => {
-              notify('岗位已删除')
+              notify(t('app.toast.jobDeleted'))
               void api.jobs().then((js) => { setJobs(js); setJob(js[0] ?? null) })
             }}
           />
@@ -305,7 +306,7 @@ function Workspace() {
             loading={scorecard.loading}
             onClose={() => setScorecard({ open: false, data: null, loading: false })}
             onSaved={() => {
-              notify('评分卡已保存')
+              notify(t('app.toast.scorecardSaved'))
               void api.jobs().then(setJobs)
             }}
           />

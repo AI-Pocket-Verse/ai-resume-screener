@@ -1,11 +1,14 @@
 import { useState } from 'react'
 import { cn } from '@/lib/cn'
 import type { EvaluationDetail, Evidence } from '@/lib/api'
+import { useI18n } from '@/i18n'
+import { judgedByLabel, skillLabel, stanceLabel, tierLabel, vsMedianLabel } from '@/lib/values'
 import { GradeBadge, ScoreBar } from './GradeBadge'
 
 /** 原文引用。**每条结论都必须配** —— 拿不出引用的结论在服务端就被丢弃了。
  *  这是产品可信度的核心:HR 能顺着引用回到简历原文自己判断。 */
 function EvidenceList({ items }: { items: Evidence[] }) {
+  const { t, lang } = useI18n()
   if (!items.length) return null
   return (
     <div className="mt-1.5 space-y-1">
@@ -14,7 +17,7 @@ function EvidenceList({ items }: { items: Evidence[] }) {
           key={i}
           className="border-l-2 border-line pl-2.5 text-xs leading-relaxed text-fg-muted"
         >
-          「{e.quote}」
+          {t('eval.quote', { text: skillLabel(e.quote, lang) })}
           {e.section ? <span className="ml-1 text-fg-faint">· {e.section}</span> : null}
         </blockquote>
       ))}
@@ -35,6 +38,7 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
 }
 
 export function EvaluationView({ evaluation }: { evaluation: EvaluationDetail }) {
+  const { t } = useI18n()
   const [showBreakdown, setShowBreakdown] = useState(false)
   const e = evaluation
   // 快照只用来查维度的中文名与权重。**不能假设它一定完好**:服务端对它走的是
@@ -51,10 +55,10 @@ export function EvaluationView({ evaluation }: { evaluation: EvaluationDetail })
           onClick={() => setShowBreakdown((v) => !v)}
           className="text-xs text-fg-faint underline decoration-dotted underline-offset-2 hover:text-fg-muted"
         >
-          {e.weightedScore != null ? `${Math.round(e.weightedScore)} 分` : '—'} · 看计算过程
+          {e.weightedScore != null ? t('common.score', { n: Math.round(e.weightedScore) }) : '—'} · {t('eval.breakdown')}
         </button>
         <span className="ml-auto text-xs text-fg-faint">
-          {e.tier === 'deep' ? '深度评估' : '快速评估'}
+          {tierLabel(e.tier, t)}
           {e.model ? ` · ${e.model}` : ''}
         </span>
       </div>
@@ -63,10 +67,10 @@ export function EvaluationView({ evaluation }: { evaluation: EvaluationDetail })
         <div className="mb-5 rounded-xl border border-line bg-surface/50 p-3">
           <table className="w-full text-xs">
             <thead className="text-fg-faint">
-              <tr><th className="pb-1 text-left font-normal">维度</th>
-                <th className="pb-1 text-right font-normal">得分</th>
-                <th className="pb-1 text-right font-normal">权重</th>
-                <th className="pb-1 text-right font-normal">贡献</th></tr>
+              <tr><th className="pb-1 text-left font-normal">{t('eval.col.dimension')}</th>
+                <th className="pb-1 text-right font-normal">{t('eval.col.score')}</th>
+                <th className="pb-1 text-right font-normal">{t('eval.col.weight')}</th>
+                <th className="pb-1 text-right font-normal">{t('eval.col.contribution')}</th></tr>
             </thead>
             <tbody>
               {e.extras.breakdown.map((b) => (
@@ -80,14 +84,14 @@ export function EvaluationView({ evaluation }: { evaluation: EvaluationDetail })
             </tbody>
           </table>
           <p className="mt-2 text-[11px] text-fg-faint">
-            1-5 分线性映射到 0-100（1 分 = 0），再按权重加权。这里用的是本次评估当时的评分卡快照。
+            {t('eval.breakdown.note')}
           </p>
         </div>
       ) : null}
 
       {e.summary ? <p className="mb-5 text-sm leading-relaxed">{e.summary}</p> : null}
 
-      <Section title="硬性门槛" hint="不通过只标红,不自动淘汰">
+      <Section title={t('eval.gates')} hint={t('eval.gates.hint')}>
         <div className="space-y-1.5">
           {e.gateResults.map((g) => {
             const tone = g.pass === true
@@ -112,9 +116,9 @@ export function EvaluationView({ evaluation }: { evaluation: EvaluationDetail })
                   </span>
                   <span className="font-medium">{g.label}</span>
                   {/* unknown 是「简历未提及」,不是「不满足」——灰色而非红色。 */}
-                  {g.pass === 'unknown' ? <span className="text-xs text-fg-faint">简历未提及</span> : null}
+                  {g.pass === 'unknown' ? <span className="text-xs text-fg-faint">{t('eval.gate.unknown')}</span> : null}
                   <span className="ml-auto text-[11px] text-fg-faint">
-                    {g.judgedBy === 'code' ? '规则判定' : 'AI 判定'}
+                    {judgedByLabel(g.judgedBy, t)}
                   </span>
                 </div>
                 {g.reason ? <p className="mt-1 pl-6 text-xs text-fg-muted">{g.reason}</p> : null}
@@ -125,7 +129,7 @@ export function EvaluationView({ evaluation }: { evaluation: EvaluationDetail })
         </div>
       </Section>
 
-      <Section title="维度评分" hint="每条结论均可追溯到简历原文">
+      <Section title={t('eval.dimensions')} hint={t('eval.dimensions.hint')}>
         <div className="space-y-3.5">
           {e.scores.map((s) => {
             const d = dimLabel.get(s.key)
@@ -134,7 +138,7 @@ export function EvaluationView({ evaluation }: { evaluation: EvaluationDetail })
                 <div className="mb-1 flex items-baseline gap-2 text-sm">
                   <span className="font-medium">{d?.label ?? s.key}</span>
                   <span className="tabular-nums text-fg-muted">{s.score}/5</span>
-                  <span className="ml-auto text-xs text-fg-faint">权重 {d?.weight ?? '—'}%</span>
+                  <span className="ml-auto text-xs text-fg-faint">{t('eval.weight', { n: d?.weight ?? '—' })}</span>
                 </div>
                 <ScoreBar score={s.score} />
                 <p className="mt-1.5 text-xs leading-relaxed text-fg-muted">{s.reason}</p>
@@ -146,7 +150,7 @@ export function EvaluationView({ evaluation }: { evaluation: EvaluationDetail })
       </Section>
 
       {e.highlights.length ? (
-        <Section title="亮点">
+        <Section title={t('eval.highlights')}>
           <ul className="space-y-2">
             {e.highlights.map((h, i) => (
               <li key={i} className="text-sm">
@@ -159,7 +163,7 @@ export function EvaluationView({ evaluation }: { evaluation: EvaluationDetail })
       ) : null}
 
       {e.concerns.length ? (
-        <Section title="存疑" hint="仅事实层面,不含人格推测">
+        <Section title={t('eval.concerns')} hint={t('eval.concerns.hint')}>
           <ul className="space-y-2">
             {e.concerns.map((c, i) => (
               <li key={i} className="text-sm">
@@ -174,21 +178,21 @@ export function EvaluationView({ evaluation }: { evaluation: EvaluationDetail })
       {/* ── 以下是精评独有产出 ── */}
 
       {e.extras.peerContext ? (
-        <Section title="横向定位" hint={`同岗位 ${e.extras.peerContext.cohortSize} 人中`}>
+        <Section title={t('eval.peer')} hint={t('eval.peer.hint', { n: e.extras.peerContext.cohortSize })}>
           <div className="space-y-1.5">
             {e.extras.peerContext.dimensions.map((d) => (
               <div key={d.key} className="flex items-center gap-2 text-xs">
                 <span className="w-32 shrink-0 truncate text-fg-muted">{d.label}</span>
-                <span className="tabular-nums">第 {d.rank} 名</span>
+                <span className="tabular-nums">{t('eval.peer.rank', { n: d.rank })}</span>
                 <span className={cn(
                   'rounded px-1.5 py-0.5',
                   d.vsMedian === 'above' ? 'bg-grade-a-bg text-grade-a'
                     : d.vsMedian === 'below' ? 'bg-grade-c-bg text-grade-c'
                       : 'bg-surface text-fg-faint',
                 )}>
-                  {d.vsMedian === 'above' ? '高于中位' : d.vsMedian === 'below' ? '低于中位' : '等于中位'}
+                  {vsMedianLabel(d.vsMedian, t)}
                 </span>
-                <span className="text-fg-faint">中位数 {d.median}</span>
+                <span className="text-fg-faint">{t('eval.peer.median', { n: d.median })}</span>
               </div>
             ))}
           </div>
@@ -196,12 +200,12 @@ export function EvaluationView({ evaluation }: { evaluation: EvaluationDetail })
       ) : null}
 
       {e.extras.followUpQuestions?.length ? (
-        <Section title="面试追问建议" hint="针对存疑点与低分维度">
+        <Section title={t('eval.followUp')} hint={t('eval.followUp.hint')}>
           <ul className="space-y-2.5">
             {e.extras.followUpQuestions.map((q, i) => (
               <li key={i} className="rounded-lg border border-line p-2.5">
                 <p className="text-sm">{q.question}</p>
-                <p className="mt-1 text-xs text-fg-faint">为什么问：{q.rationale}</p>
+                <p className="mt-1 text-xs text-fg-faint">{t('eval.followUp.why', { text: q.rationale })}</p>
               </li>
             ))}
           </ul>
@@ -209,16 +213,13 @@ export function EvaluationView({ evaluation }: { evaluation: EvaluationDetail })
       ) : null}
 
       {e.extras.verdict ? (
-        <Section title="倾向" hint="仅供参考,最终由你决定">
+        <Section title={t('eval.verdict')} hint={t('eval.verdict.hint')}>
           <div className="rounded-xl border border-line p-3">
             <div className="text-sm font-medium">
-              {{
-                recommend: '推荐面试', lean_recommend: '倾向推荐',
-                lean_pass: '倾向放弃', pass: '不建议面试',
-              }[e.extras.verdict.stance] ?? e.extras.verdict.stance}
+              {stanceLabel(e.extras.verdict.stance, t)}
             </div>
-            <p className="mt-1.5 text-xs text-fg-muted">主要依据：{e.extras.verdict.mainReason}</p>
-            <p className="mt-1 text-xs text-fg-muted">主要顾虑：{e.extras.verdict.mainConcern}</p>
+            <p className="mt-1.5 text-xs text-fg-muted">{t('eval.verdict.reason', { text: e.extras.verdict.mainReason })}</p>
+            <p className="mt-1 text-xs text-fg-muted">{t('eval.verdict.concern', { text: e.extras.verdict.mainConcern })}</p>
           </div>
         </Section>
       ) : null}

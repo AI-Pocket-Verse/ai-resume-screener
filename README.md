@@ -1,64 +1,83 @@
 # ai-resume-screener
 
-AI 简历筛选：按岗位 JD 生成评分卡，把各种格式的简历解析成结构化数据，再按评分卡分档打分；每条结论都附简历原文，最终由人来拍板。
+English | [中文](README-CN.md)
 
-- **岗位管理**：团队、岗位与 JD；按岗位成员隔离查看权限
-- **评分卡**：AI 根据 JD 生成评分卡草稿（维度、权重、5 / 3 / 1 分锚点、硬门槛），可人工调整，也可从其他岗位复制
-- **简历解析**：支持 PDF、图片（png / jpg / webp）、docx、粘贴文本，可批量拖拽上传；PDF 先渲染成页图再交给视觉模型抽取结构化字段
-- **派生字段**：工作年限、跳槽次数、空窗期、时间线冲突由规则计算，不交给模型
-- **去重合并**：识别重复投递的同一候选人并合并记录
-- **粗评与精评**：粗评批量输出 A / B / C / D 档位与总分；精评输出维度分、原文引用、亮点与存疑、面试提纲和同岗位横向排名
-- **多模型可切换**：解析、粗评、精评可分别配置模型，支持 Claude Code CLI、Anthropic API，以及豆包、千问、DeepSeek、智谱、Kimi、MiniMax、OpenAI 等 OpenAI 兼容接口（含 Ollama 等本地服务）
-- **公平与可追溯**：硬门槛只标红不淘汰；评估前去掉姓名等字段，减少偏见；每条结论必须附简历原文
-- **合规**：候选人彻底删除（原件、解析结果、评估一并删除）与操作审计日志
-- **可选飞书通知**：批量解析或分析完成后，给上传人推送飞书卡片
+AI resume screening: generate a scorecard from a job description, parse resumes in any common format into structured data, then grade them against the scorecard. Every conclusion quotes the resume verbatim, and a human makes the final call.
 
-技术栈：Fastify + Prisma（SQLite）后端，React + Vite + Tailwind 前端，pnpm workspace 管理。
+- **Jobs**: teams, jobs and JDs; visibility is isolated by job membership
+- **Scorecards**: AI drafts a scorecard from the JD (dimensions, weights, 5 / 3 / 1 anchors, hard requirements); edit it by hand or copy one from another job
+- **Resume parsing**: PDF, images (png / jpg / webp), docx and pasted text, with drag-and-drop batch upload; PDFs are rendered to page images and read by a vision model
+- **Derived fields**: years of experience, job changes, employment gaps and timeline conflicts are computed by rules, not by the model
+- **Deduplication**: recognizes the same candidate applying more than once and merges the records
+- **Screening and deep evaluation**: screening grades a batch into A / B / C / D with a total score; deep evaluation adds per-dimension scores, quotes, highlights and concerns, interview questions and a ranking against other candidates for the same job
+- **English and Chinese UI**: follows the system language by default and can be switched from the avatar menu in the bottom-left corner; AI-written conclusions and scorecard drafts use the UI language of whoever started the analysis
+- **Switchable models**: parsing, screening and deep evaluation can each use a different model -- Claude Code CLI, the Anthropic API, or any OpenAI-compatible API (Doubao, Qwen, DeepSeek, Zhipu GLM, Kimi, MiniMax, OpenAI, and local servers such as Ollama)
+- **Fair and traceable**: hard requirements are flagged, never used to auto-reject; names and similar fields are removed before evaluation to reduce bias; every conclusion must quote the resume
+- **Compliance**: permanent candidate deletion (originals, parsed data and evaluations) and an audit log
+- **Optional Feishu (Lark) notifications**: a card is sent to the person who started a parsing or analysis batch when it finishes, in the UI language they were using
 
-## 外部依赖
+Stack: Fastify + Prisma (SQLite) backend, React + Vite + Tailwind frontend, managed as a pnpm workspace.
 
-| 程序 | 用途 | 安装 |
+## Screenshots
+
+Job workspace: filter candidates by grade; the right panel shows the AI screening result and the hard-requirement checks.
+
+![Job workspace](docs/screenshots/en/workspace.png)
+
+Deep evaluation: per-dimension scores, verbatim quotes, highlights and concerns, and interview questions.
+
+![Deep evaluation](docs/screenshots/en/deep-evaluation.png)
+
+Scorecard: AI drafts it from the JD; adjust dimensions, weights, anchors and hard requirements by hand.
+
+![Scorecard](docs/screenshots/en/scorecard.png)
+
+All candidates, companies and contact details in the screenshots are fictional.
+
+## Requirements
+
+| Program | Purpose | Install |
 | --- | --- | --- |
-| Node.js ≥ 20.19（推荐 22 或 24）、pnpm 9 | 运行与构建 | — |
-| poppler（`pdfinfo`、`pdftocairo`） | 把 PDF 渲染成页图 | macOS `brew install poppler`；Debian `apt install poppler-utils` |
-| 中文字体 | 服务器渲染中文 PDF，缺字体会渲染成方块 | Debian `apt install fonts-noto-cjk` |
-| Claude Code CLI（`claude`） | 默认的模型通道；改用其他模型通道时不需要 | 按官方文档安装，并用运行服务的那个系统用户执行一次 `claude` 完成登录 |
+| Node.js ≥ 20.19 (22 or 24 recommended), pnpm 9 | Run and build | — |
+| poppler (`pdfinfo`, `pdftocairo`) | Render PDFs to page images | macOS `brew install poppler`; Debian `apt install poppler-utils` |
+| CJK fonts | Needed on servers to render Chinese PDFs; without them characters show up as boxes | Debian `apt install fonts-noto-cjk` |
+| Claude Code CLI (`claude`) | The default model provider; not needed if you use another provider | Install it following the official docs, then run `claude` once as the user that runs the service to log in |
 
-api 启动时会检查 `pdfinfo`、`pdftocairo`（以及用到 Claude Code CLI 时的 `claude`）能否运行，并在日志里写明结果。缺 poppler 时只有 PDF 解析会失败，图片、docx、粘贴文本不受影响。
+On startup the api checks that `pdfinfo`, `pdftocairo` (and `claude`, when the Claude Code CLI provider is used) can run, and logs the result. Without poppler only PDF parsing fails; images, docx and pasted text still work.
 
-## 快速开始
+## Quick start
 
 ```bash
-pnpm install     # 安装依赖并生成 Prisma client
-pnpm bootstrap   # 复制 api/.env.example → api/.env.dev，并创建本地 SQLite 数据库
-pnpm dev         # 同时启动 api（:4070）和 web（:5070）
+pnpm install     # install dependencies and generate the Prisma client
+pnpm bootstrap   # copy api/.env.example to api/.env.dev and create the local SQLite database
+pnpm dev         # start the api (:4070) and the web app (:5070)
 ```
 
-打开 <http://localhost:5070> 即可使用。默认是**本地单用户模式**：无需登录，唯一的本地用户就是超级管理员。首次启动会自动建一个「默认团队」。
+Open <http://localhost:5070>. By default the app runs in **local single-user mode**: no login, and the only local user is the super admin. A "Default team" is created on first start.
 
-默认通过本机的 Claude Code CLI 调用模型。没有 Claude 订阅时，在 `api/.env.dev` 里改用其他模型通道（见下节「模型配置」），重启 `pnpm dev` 即可。
+Models are called through the Claude Code CLI on this machine by default. Without a Claude subscription, switch to another provider in `api/.env.dev` (see "Model configuration" below) and restart `pnpm dev`.
 
-上手顺序：新建岗位 → 配置评分卡（可让 AI 根据 JD 生成草稿）→ 上传简历（自动解析）→ 点「一键分析」做粗评 → 对感兴趣的候选人做精评。
+Getting started: create a job → set up the scorecard (AI can draft it from the JD) → upload resumes (parsed automatically) → click "Analyze N new" to screen them → run a deep evaluation on the candidates you are interested in.
 
-上传的原件和渲染页图在 `api/data/`，数据库在 `api/prisma/dev.db`，两者都已被 git 忽略。
+Uploaded originals and rendered page images are stored in `api/data/`, and the database in `api/prisma/dev.db`. Both are ignored by git.
 
-## 模型配置
+## Model configuration
 
-解析、粗评、精评三档可以用不同的模型：`LLM_PROVIDER` / `LLM_MODEL` 对三档都生效，`LLM_PARSE_*`、`LLM_SCREEN_*`、`LLM_DEEP_*` 单独覆盖某一档。改完重启 api 生效，启动日志会逐档打印实际使用的通道和模型。通道名写错、缺 key 或缺模型名时 api 会拒绝启动，并列出全部问题。
+Parsing, screening and deep evaluation can use different models. `LLM_PROVIDER` / `LLM_MODEL` apply to all three; `LLM_PARSE_*`, `LLM_SCREEN_*` and `LLM_DEEP_*` override one purpose. Restart the api after a change; the startup log prints the provider and model used for each purpose. If a provider name is wrong, or a key or model name is missing, the api refuses to start and lists every problem.
 
-| 通道（`LLM_PROVIDER`） | 需要的配置 | 说明 |
+| Provider (`LLM_PROVIDER`) | Required settings | Notes |
 | --- | --- | --- |
-| `claude`（默认） | 无 | 本机 Claude Code CLI。`LLM_MODEL` 可选（如 `opus`、`sonnet`），留空用 CLI 的默认模型 |
-| `anthropic` | `ANTHROPIC_API_KEY` | Anthropic API，默认模型 `claude-opus-5-5`；`ANTHROPIC_BASE_URL` 可指向代理 |
-| `openai` | `OPENAI_API_KEY`、模型名 | OpenAI API；`OPENAI_BASE_URL` 可指向任何 OpenAI 兼容服务（如 Ollama 的 `http://127.0.0.1:11434/v1`，此时 key 可不填） |
-| `doubao` | `ARK_API_KEY`、模型名 | 火山方舟（豆包），在[方舟控制台 API Key 管理](https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey)创建，说明见[管理 API Key](https://www.volcengine.com/docs/82379/1361424) |
-| `qwen` | `QWEN_API_KEY`、模型名 | 阿里云百炼（千问），获取方式见[获取与配置 API Key](https://help.aliyun.com/zh/model-studio/get-api-key) |
-| `deepseek` | `DEEPSEEK_API_KEY`、模型名 | DeepSeek，在 [API keys](https://platform.deepseek.com/api_keys) 页面创建 |
-| `zhipu` | `ZHIPU_API_KEY`、模型名 | 智谱（GLM），在[智谱开放平台 API Keys](https://bigmodel.cn/usercenter/proj-mgmt/apikeys) 创建 |
-| `kimi` | `KIMI_API_KEY`、模型名 | 月之暗面（Kimi），在 [Kimi 开放平台 API Keys](https://platform.moonshot.cn/console/api-keys) 创建 |
-| `minimax` | `MINIMAX_API_KEY`、模型名 | MiniMax，在开放平台「账户管理 > 接口密钥」创建，见[如何获取 API Key](https://platform.minimaxi.com/docs/faq/about-apis) |
+| `claude` (default) | none | Claude Code CLI on this machine. `LLM_MODEL` is optional (e.g. `opus`, `sonnet`); empty uses the CLI's default model |
+| `anthropic` | `ANTHROPIC_API_KEY` | Anthropic API, default model `claude-opus-5-5`; `ANTHROPIC_BASE_URL` can point to a proxy |
+| `openai` | `OPENAI_API_KEY`, model name | OpenAI API; `OPENAI_BASE_URL` can point to any OpenAI-compatible server (e.g. Ollama at `http://127.0.0.1:11434/v1`, where the key can be left empty) |
+| `doubao` | `ARK_API_KEY`, model name | Volcano Engine Ark (Doubao). Create a key in the [Ark console](https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey); see [Manage API keys](https://www.volcengine.com/docs/82379/1361424) |
+| `qwen` | `QWEN_API_KEY`, model name | Alibaba Cloud Model Studio (Qwen). See [Get an API key](https://help.aliyun.com/zh/model-studio/get-api-key) |
+| `deepseek` | `DEEPSEEK_API_KEY`, model name | DeepSeek. Create a key on the [API keys](https://platform.deepseek.com/api_keys) page |
+| `zhipu` | `ZHIPU_API_KEY`, model name | Zhipu (GLM). Create a key in the [Zhipu console](https://bigmodel.cn/usercenter/proj-mgmt/apikeys) |
+| `kimi` | `KIMI_API_KEY`, model name | Moonshot (Kimi). Create a key in the [Kimi console](https://platform.moonshot.cn/console/api-keys) |
+| `minimax` | `MINIMAX_API_KEY`, model name | MiniMax. Create a key under "Account > API keys"; see [How to get an API key](https://platform.minimaxi.com/docs/faq/about-apis) |
 
-示例：解析用千问的视觉模型，粗评用 DeepSeek，精评用 Anthropic API。
+Example: a Qwen vision model for parsing, DeepSeek for screening, and the Anthropic API for deep evaluation.
 
 ```bash
 LLM_PARSE_PROVIDER=qwen
@@ -71,95 +90,96 @@ LLM_DEEP_PROVIDER=anthropic
 ANTHROPIC_API_KEY=...
 ```
 
-注意事项：
+Notes:
 
-- **解析 PDF 和图片需要支持图片输入的模型**。纯文本模型（如 DeepSeek 的对话模型）只能用于粗评、精评，或只解析 docx 和粘贴文本；具体哪些模型支持图片，以各家文档为准。
-- 一份 PDF 最多渲染 `RESUME_MAX_PAGES` 页，每页一张图随请求发送。厂商对单次请求的图片数量或体积有上限时，调低 `RESUME_MAX_PAGES` 或 `RESUME_RENDER_LONG_EDGE`。
-- `LLM_EFFORT`（`low` / `medium` / `high` / `xhigh` / `max`）只对 `claude` 和 `anthropic` 通道生效；精评固定使用 `high`。
-- `ANTHROPIC_*` 环境变量也会传给 Claude Code CLI：配置了 `ANTHROPIC_API_KEY` 后，`claude` 通道同样会改用这个 key 计费。
+- **Parsing PDFs and images needs a model that accepts images.** Text-only models (such as DeepSeek's chat model) can only be used for screening and deep evaluation, or for parsing docx and pasted text. Check each vendor's docs for which models accept images.
+- A PDF is rendered to at most `RESUME_MAX_PAGES` pages, one image per page in the request. If a vendor limits the number or size of images per request, lower `RESUME_MAX_PAGES` or `RESUME_RENDER_LONG_EDGE`.
+- `LLM_EFFORT` (`low` / `medium` / `high` / `xhigh` / `max`) only applies to the `claude` and `anthropic` providers; deep evaluation always uses `high`.
+- `ANTHROPIC_*` environment variables are also passed to the Claude Code CLI: once `ANTHROPIC_API_KEY` is set, the `claude` provider bills that key as well.
+- Parsed resume fields keep the resume's own language. AI-written conclusions (summaries, highlights, concerns, interview questions) and scorecard drafts are written in the UI language of whoever started the analysis and are stored as is; switching the UI language later does not translate them. Quotes are always verbatim.
 
-## 常用命令
+## Commands
 
-| 命令 | 作用 |
+| Command | Purpose |
 | --- | --- |
-| `pnpm dev` | 本地开发（web 通过 Vite 代理访问 api） |
-| `pnpm build` | 构建 api（`api/dist`）和 web（`web/dist`） |
-| `pnpm typecheck` | 全部包类型检查 |
-| `pnpm test` | 全部单元测试（api 测试使用独立的 `api/prisma/test.db`） |
-| `pnpm --filter @ai-resume-screener/api db:migrate` | 修改 `api/prisma/schema.prisma` 后生成并应用迁移 |
+| `pnpm dev` | Local development (the web app reaches the api through the Vite proxy) |
+| `pnpm build` | Build the api (`api/dist`) and the web app (`web/dist`) |
+| `pnpm typecheck` | Type-check all packages |
+| `pnpm test` | Run all unit tests (api tests use a separate `api/prisma/test.db`) |
+| `pnpm --filter @ai-resume-screener/api db:migrate` | Create and apply a migration after changing `api/prisma/schema.prisma` |
 
-`api/scripts/` 下有几个开发脚本（用法写在各文件开头）：`parse-one.mts` 单独解析一份简历，`seed-demo.mts` 造一套演示数据，`eval-regress.mts` 改 prompt 后做评估回归对比（产出的 `eval-baseline.json` 含候选人姓名，已被 git 忽略）。
+`api/scripts/` has a few development scripts (usage at the top of each file): `parse-one.mts` parses a single resume, `seed-demo.mts` builds a set of demo data, and `eval-regress.mts` compares evaluations after a prompt change (its `eval-baseline.json` output contains candidate names and is ignored by git).
 
-需要更多团队时，可以直接调接口：`curl -X POST http://127.0.0.1:4070/api/teams -H 'Content-Type: application/json' -d '{"name":"研发团队"}'`。
+To add more teams, call the API directly: `curl -X POST http://127.0.0.1:4070/api/teams -H 'Content-Type: application/json' -d '{"name":"Engineering"}'`.
 
-## 配置
+## Configuration
 
-api 用 Node 原生的 `--env-file` 加载配置：`pnpm dev` 读 `api/.env.dev`，`pnpm start` 读 `api/.env.prod`。两者都不入库，模板是 [`api/.env.example`](api/.env.example)，每项都有注释。模型相关的变量见上节。
+The api loads its settings with Node's built-in `--env-file`: `pnpm dev` reads `api/.env.dev` and `pnpm start` reads `api/.env.prod`. Neither is committed; the template is [`api/.env.example`](api/.env.example), with a comment on every setting. Model settings are described above.
 
-| 变量 | 默认 | 说明 |
+| Variable | Default | Description |
 | --- | --- | --- |
-| `DATABASE_URL` | — | SQLite 路径，相对路径以 `api/prisma/` 为基准；生产建议写绝对路径 |
-| `DATA_DIR` | `./data` | 简历原件与渲染页图的目录（相对 `api/`） |
-| `HOST` / `PORT` | `127.0.0.1` / `4070` | api 监听地址 |
-| `TRUST_PROXY` | `loopback` | 信任的反向代理地址（Fastify `trustProxy`），限流按真实客户端 IP 分桶。同机 nginx 反代用默认值即可；不要设为 `true`，也不支持填跳数 |
-| `WEB_ORIGIN` | `http://localhost:5070` | 前端访问地址，用于 CORS 白名单 |
-| `CLAUDE_BIN` | 从 PATH 查找 | `claude` 可执行文件的路径 |
-| `RESUME_MAX_PAGES` | `20` | 单份简历最多渲染的页数 |
-| `LLM_IDLE_TIMEOUT_MS` / `LLM_HARD_TIMEOUT_MS` | `90000` / `600000` | 单次模型调用的空闲超时与总时长上限（毫秒，须为纯数字） |
-| `WHOAMI_URL` | 未设置 | 设置后启用飞书登录，见下文 |
-| `ADMIN_MOBILES` | 空 | 启用登录后的超级管理员手机号，逗号分隔 |
-| `ALLOW_NO_AUTH` | `false` | 生产环境不配登录时 api 默认拒绝启动；确实要免登录运行时设为 `true` |
-| `AUTH_API_BASE` / `INTERNAL_API_TOKEN` | 未设置 | 飞书通知，见下文 |
-| `WEB_PUBLIC_URL` | `http://localhost:5070` | 用户实际访问本服务的地址，用于通知卡片里的链接 |
+| `DATABASE_URL` | — | SQLite path; relative paths are resolved against `api/prisma/`. Use an absolute path in production |
+| `DATA_DIR` | `./data` | Directory for original resumes and rendered page images (relative to `api/`) |
+| `HOST` / `PORT` | `127.0.0.1` / `4070` | Address the api listens on |
+| `TRUST_PROXY` | `loopback` | Trusted reverse proxies (Fastify `trustProxy`), so rate limiting uses the real client IP. Keep the default for nginx on the same host; do not set it to `true`, and hop counts are not supported |
+| `WEB_ORIGIN` | `http://localhost:5070` | Origin of the web app, for the CORS allowlist |
+| `CLAUDE_BIN` | found on PATH | Path to the `claude` executable |
+| `RESUME_MAX_PAGES` | `20` | Maximum number of pages rendered per resume |
+| `LLM_IDLE_TIMEOUT_MS` / `LLM_HARD_TIMEOUT_MS` | `90000` / `600000` | Idle timeout and total time limit for one model call (milliseconds, plain numbers only) |
+| `WHOAMI_URL` | unset | Enables Feishu login when set; see below |
+| `ADMIN_MOBILES` | empty | Super admin mobile numbers once login is enabled, comma-separated |
+| `ALLOW_NO_AUTH` | `false` | Without login the api refuses to start in production; set to `true` only if you really want to run without login |
+| `AUTH_API_BASE` / `INTERNAL_API_TOKEN` | unset | Feishu notifications; see below |
+| `WEB_PUBLIC_URL` | `http://localhost:5070` | The address users actually open, used for links in notification cards |
 
-## 安全与隐私
+## Security and privacy
 
-简历含个人信息，部署前请读完这一节。
+Resumes contain personal data. Read this section before deploying.
 
-- **本地模式不鉴权**：能访问到 api 的人都能看到全部简历，所以 `HOST` 默认只监听本机，并且只接受 Host 为 `localhost` / `127.0.0.1` / `WEB_PUBLIC_URL` 主机名的请求，防止恶意网页通过 DNS rebinding 读取数据。`NODE_ENV=production` 且没配登录时 api 拒绝启动，除非显式设置 `ALLOW_NO_AUTH=true`。
-- **简历会发给你选择的模型厂商**：解析时发送简历全文或页图，评估时发送去掉姓名等字段后的结构化内容。选择厂商前请确认其数据处理条款符合你的合规要求；对数据出境敏感时，可以用 `openai` 通道接本地部署的模型。
-- **Claude Code CLI 通道与运维用户的配置隔离**：api 调用 `claude` 时固定使用 `dontAsk` 权限模式，只开放读取该份简历页图目录的 Read 工具，不加载用户的 settings、hooks、MCP、技能和 CLAUDE.md，也不保存会话记录（在 Claude Code 2.1.318 上验证，升级 CLI 后建议复核）。子进程只继承运行所需的环境变量，不含 `INTERNAL_API_TOKEN` 等密钥。因为不读 settings，如果你在 `~/.claude/settings.json` 里通过 `env` 配置了代理或中转地址，需要改成写在 `api/.env.*` 里的环境变量（`ANTHROPIC_BASE_URL`、`HTTPS_PROXY` 等）。
-- **静态存储是明文**：简历原件和数据库里的解析结果没有加密（联系方式的去重哈希也只是未加盐的 SHA-256，不能当作脱敏），请用磁盘加密和目录权限保护 `DATA_DIR` 与数据库文件。
-- **彻底删除的范围**：删除候选人会删掉原件、页图、解析结果、评估，并清空合并记录里的自由文本备注；SQLite 开启了 `secure_delete`，被删内容不会残留在库文件空闲页里。审计日志有意保留操作对象的姓名快照，用于事后追溯。删除不会追溯历史备份：如果你定期备份数据库和 `DATA_DIR`，备份里的副本会保留到备份过期为止。删除岗位时，只属于该岗位的原件、页图和候选人会一并清理。
+- **Local mode has no authentication**: anyone who can reach the api can see every resume. That is why `HOST` only listens on the local machine by default, and only requests whose Host is `localhost` / `127.0.0.1` / the host of `WEB_PUBLIC_URL` are accepted, which stops malicious pages from reading data through DNS rebinding. With `NODE_ENV=production` and no login configured, the api refuses to start unless `ALLOW_NO_AUTH=true` is set explicitly.
+- **Resumes are sent to the model vendor you choose**: parsing sends the full resume text or page images, and evaluation sends the structured data with names and similar fields removed. Before choosing a vendor, make sure its data-processing terms meet your compliance requirements. If data leaving your network is a concern, use the `openai` provider with a locally hosted model.
+- **The Claude Code CLI provider is isolated from the operator's own configuration**: the api always calls `claude` in `dontAsk` permission mode, with only a Read tool limited to that resume's page-image directory. It does not load the user's settings, hooks, MCP servers, skills or CLAUDE.md, and does not save session transcripts (verified on Claude Code 2.1.318; re-check after upgrading the CLI). The child process only inherits the environment variables it needs, never secrets such as `INTERNAL_API_TOKEN`. Because settings are not loaded, a proxy or relay configured through `env` in `~/.claude/settings.json` must be moved to environment variables in `api/.env.*` (`ANTHROPIC_BASE_URL`, `HTTPS_PROXY`, and so on).
+- **Data at rest is not encrypted**: original resumes and parsed data in the database are stored in plain text (the contact-detail hashes used for deduplication are unsalted SHA-256 and are not anonymization). Protect `DATA_DIR` and the database file with disk encryption and directory permissions.
+- **What permanent deletion covers**: deleting a candidate removes the originals, page images, parsed data and evaluations, and clears free-text notes in merge records; SQLite runs with `secure_delete`, so deleted content does not linger in free pages of the database file. The audit log deliberately keeps a snapshot of the target's name for later review. Deletion does not reach backups: if you back up the database and `DATA_DIR`, copies stay in the backups until they expire. Deleting a job also removes originals, page images and candidates that belong only to that job.
 
-## 可选：飞书登录与权限
+## Optional: Feishu login and permissions
 
-不设置时为本地单用户模式。需要多人使用时，接入同系列开源项目 feishu-sso（飞书统一登录服务）：
+Without it the app runs in local single-user mode. For multiple users, connect feishu-sso (a Feishu single sign-on service from the same series of open-source projects):
 
-1. 部署 feishu-sso，并让反向代理把同一域名下的 `/auth/*` 转发给它（登录 cookie 依赖同源）。
-2. api 设置 `WHOAMI_URL`，指向 feishu-sso 的 whoami 接口，例如 `http://127.0.0.1:4020/api/whoami`。
-3. web 构建时设置 `VITE_SSO_BASE=/auth`（可写在 `web/.env.local`）。
-4. api 设置 `ADMIN_MOBILES`，填超级管理员的手机号（多个用逗号分隔，`+86` 等前缀会自动去掉）。飞书应用需要有读取手机号的权限，否则谁都不会被识别为超管。
+1. Deploy feishu-sso and have the reverse proxy forward `/auth/*` on the same domain to it (the login cookie relies on the same origin).
+2. Set `WHOAMI_URL` on the api to feishu-sso's whoami endpoint, e.g. `http://127.0.0.1:4020/api/whoami`.
+3. Build the web app with `VITE_SSO_BASE=/auth` (can be put in `web/.env.local`).
+4. Set `ADMIN_MOBILES` on the api to the super admins' mobile numbers (comma-separated; prefixes such as `+86` are stripped). The Feishu app needs permission to read mobile numbers, otherwise nobody is recognized as a super admin.
 
-接入后的权限：
+Permissions once login is enabled:
 
-| 角色 | 能做什么 |
+| Role | Can do |
 | --- | --- |
-| 登录用户 | 创建岗位（自己成为该岗位 owner）；只能看到自己参与的岗位及其候选人 |
-| 岗位成员（含 owner） | 在该岗位内上传简历、查看候选人与评估，**编辑岗位信息和评分卡**（包括保存、复制评分卡） |
-| 岗位 owner | 在成员能力之上，添加 / 移除岗位成员、删除岗位 |
-| 超级管理员 | 看到全部岗位；彻底删除候选人；查看审计日志 |
+| Signed-in user | Create jobs (becoming that job's owner); sees only the jobs they belong to and their candidates |
+| Job member (including the owner) | Upload resumes in that job, view candidates and evaluations, **edit the job and its scorecard** (including saving and copying scorecards) |
+| Job owner | On top of member rights, add / remove job members and delete the job |
+| Super admin | Sees every job; permanently deletes candidates; reads the audit log |
 
-同一个人投递多个岗位时会合并为一个候选人，但你只能看到自己可见岗位里那几份简历上的姓名和联系方式。引用其他岗位的候选人或评分卡（挂靠候选人、复制评分卡）要求对方岗位对你可见，否则按「不存在」处理。查看联系方式、合并、删除、修改岗位信息、保存 / 复制评分卡、删除岗位、增删岗位成员都会写入审计日志（修改岗位只记录被改的字段名，不记内容）。
+When the same person applies to several jobs, the applications are merged into one candidate, but you only see the names and contact details from resumes in the jobs visible to you. Referencing another job's candidate or scorecard (attaching a candidate, copying a scorecard) requires that job to be visible to you; otherwise it is treated as not found. Viewing contact details, merging, deleting, editing a job, saving / copying a scorecard, deleting a job and adding / removing job members are all written to the audit log (job edits only record which fields changed, not their content).
 
-## 可选：飞书通知
+## Optional: Feishu notifications
 
-批量解析或分析完成后，给上传人推送一张飞书卡片。本服务不持有飞书凭证，通知通过 feishu-sso 发送，因此需要先完成上面的飞书登录：
+When a parsing or analysis batch finishes, a Feishu card is sent to the person who started it, written in the UI language they were using at the time. This service holds no Feishu credentials; notifications go through feishu-sso, so set up Feishu login first:
 
-1. api 设置 `AUTH_API_BASE`，指向 feishu-sso 的 API 地址，例如 `http://127.0.0.1:4020/api`。
-2. api 设置 `INTERNAL_API_TOKEN`，值必须与 feishu-sso 配置中的 `INTERNAL_API_TOKEN` 完全相同。
-3. api 设置 `WEB_PUBLIC_URL` 为用户实际访问本服务的地址，卡片里的按钮会打开它。
+1. Set `AUTH_API_BASE` on the api to feishu-sso's API base, e.g. `http://127.0.0.1:4020/api`.
+2. Set `INTERNAL_API_TOKEN` on the api to exactly the same value as `INTERNAL_API_TOKEN` in feishu-sso's configuration.
+3. Set `WEB_PUBLIC_URL` to the address users actually open; the button in the card links there.
 
-两项都不设置时不发通知，启动日志会显示 `feishu notify: off`。生产环境配置了 `AUTH_API_BASE` 但口令为空或仍是占位符时，api 会拒绝启动，避免通知悄悄失效。
+With neither set, no notifications are sent and the startup log shows `feishu notify: off`. In production, if `AUTH_API_BASE` is set but the token is empty or still a placeholder, the api refuses to start so that notifications do not silently fail.
 
-## 部署
+## Deployment
 
-`deploy/` 提供 systemd 与 nginx 模板（单机部署，nginx 托管前端静态文件并反代 api，强制 HTTPS 并带安全响应头）：
+`deploy/` contains systemd and nginx templates (single-host deployment: nginx serves the built frontend and proxies the api, forces HTTPS and adds security headers):
 
 ```bash
 git clone <repo> /opt/ai-resume-screener && cd /opt/ai-resume-screener
 pnpm install && pnpm build
-cp api/.env.example api/.env.prod   # 改为 NODE_ENV=production，DATABASE_URL / DATA_DIR 用绝对路径，配置模型、登录与通知
+cp api/.env.example api/.env.prod   # set NODE_ENV=production, absolute DATABASE_URL / DATA_DIR, and configure models, login and notifications
 pnpm --filter @ai-resume-screener/api db:migrate:prod
 
 sudo cp deploy/systemd.service.template /etc/systemd/system/ai-resume-screener.service
@@ -171,20 +191,20 @@ sudo sed -i 's|__INSTALL_DIR__|/opt/ai-resume-screener|; s|__SERVER_NAME__|resum
 sudo ln -sf /etc/nginx/sites-available/ai-resume-screener /etc/nginx/sites-enabled/ && sudo nginx -t && sudo systemctl reload nginx
 ```
 
-证书路径按你的签发方式填写（上例是 certbot 的默认位置）。生产环境需要配置飞书登录（`WHOAMI_URL`），否则 api 拒绝启动。
+Fill in the certificate paths according to how you issue certificates (the example uses certbot's default location). Production requires Feishu login (`WHOAMI_URL`); otherwise the api refuses to start.
 
-nginx 模板把 `X-Forwarded-For` 设为 `$remote_addr`（覆盖而不是追加），配合默认的 `TRUST_PROXY=loopback`，客户端无法伪造来源 IP 绕过限流；api 不在本机时把 `TRUST_PROXY` 改成实际代理地址。
+The nginx template sets `X-Forwarded-For` to `$remote_addr` (overwriting rather than appending). Combined with the default `TRUST_PROXY=loopback`, clients cannot spoof their IP to get around rate limiting. If the api is not on the same host, set `TRUST_PROXY` to the actual proxy address.
 
-运行服务的系统用户（上例为 `resume`）需要能执行 `pdfinfo` 和 `pdftocairo`；用到 `claude` 通道时，还要能执行 `claude`，并且用该用户登录过一次。
+The service user (`resume` in the example) must be able to run `pdfinfo` and `pdftocairo`; when the `claude` provider is used, it must also be able to run `claude` and must have logged in once as that user.
 
-## 目录结构
+## Project layout
 
 ```
-api/        Fastify 后端：上传、解析队列、评估队列、去重、合规、飞书通知
-web/        React 前端
-shared/     api 与 web 共用的 zod schema（简历结构、评分卡、评估输出）
-packages/   共用小包（LLM 调用层、登录客户端、皮肤 token、Tailwind 预设等）
-deploy/     systemd / nginx 模板
+api/        Fastify backend: uploads, parse queue, evaluation queue, deduplication, compliance, Feishu notifications
+web/        React frontend (UI strings in web/src/i18n/)
+shared/     zod schemas shared by api and web (resume structure, scorecard, evaluation output)
+packages/   small shared packages (LLM layer, login client, theme tokens, Tailwind preset, ...)
+deploy/     systemd / nginx templates
 ```
 
 ## License

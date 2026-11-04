@@ -4,7 +4,36 @@ import {
   isNlGate,
   type Gate,
 } from '@ai-resume-screener/shared'
+import type { Lang } from '../../utils/lang.js'
 import type { MergedResume } from './merge.js'
+
+/** 代码判定的说明文字。按评估发起时的界面语言写,和 AI 生成的结论保持同一种语言。 */
+const REASON = {
+  zh: {
+    noDegree: () => '简历未提及学历,或无法识别学历表述',
+    badDegreeGate: (label: string) => `门槛「${label}」的学历要求无法识别`,
+    degree: (got: string, label: string) => `简历最高学历「${got}」,要求 ${label}`,
+    unknown: (label: string) => `简历中无法确定「${label}」`,
+    notComparable: (label: string) => `「${label}」无法比较`,
+    estimated: '(部分日期只有年份,为保守估算)',
+    compare: (a: number, op: string, b: number, est: string) => `简历为 ${a},要求 ${op} ${b}${est}`,
+    eq: (a: string, b: string) => `简历为「${a}」,要求「${b}」`,
+    noOptions: (label: string) => `门槛「${label}」没有配置可选值`,
+    in: (got: string, list: string) => `简历为「${got}」,要求属于 ${list}`,
+  },
+  en: {
+    noDegree: () => 'No degree mentioned in the resume, or the wording could not be recognized',
+    badDegreeGate: (label: string) => `The degree requirement of "${label}" could not be recognized`,
+    degree: (got: string, label: string) => `Highest degree in resume: "${got}"; required: ${label}`,
+    unknown: (label: string) => `Cannot determine "${label}" from the resume`,
+    notComparable: (label: string) => `"${label}" cannot be compared`,
+    estimated: ' (some dates only have a year; conservative estimate)',
+    compare: (a: number, op: string, b: number, est: string) => `Resume: ${a}; required: ${op} ${b}${est}`,
+    eq: (a: string, b: string) => `Resume: "${a}"; required: "${b}"`,
+    noOptions: (label: string) => `No allowed values configured for "${label}"`,
+    in: (got: string, list: string) => `Resume: "${got}"; required one of ${list}`,
+  },
+} as const
 
 /**
  * 结构化门槛由**代码**判,不交给 LLM。三个好处:
@@ -57,14 +86,15 @@ function highestDegree(m: MergedResume): { rank: number; text: string } | null {
   return best
 }
 
-function judgeStructured(gate: StructuredGate, m: MergedResume): GateResult {
+function judgeStructured(gate: StructuredGate, m: MergedResume, lang: Lang): GateResult {
+  const R = REASON[lang]
   const base = { key: gate.key, label: gate.label, evidence: [], judgedBy: 'code' as const }
 
   // 学历单独走一条:需要「取最高 + 归一化到刻度」,不是裸值比较。
   if (gate.field === 'education.degree' || gate.field === 'degree') {
     const got = highestDegree(m)
     if (got == null) {
-      return { ...base, pass: 'unknown', reason: '简历未提及学历,或无法识别学历表述' }
+      return { ...base, pass: 'unknown', reason: R.noDegree() }
     }
 
     // 把门槛值(可能是单值,也可能是一组可接受的学历)统一解析成刻度。
@@ -74,7 +104,7 @@ function judgeStructured(gate: StructuredGate, m: MergedResume): GateResult {
     // 门槛值本身没写清楚(如 value 是个数字或不认识的词)→ 判 unknown 交人工。
     // **绝不能默默判 false** —— 那会把合格的人挡在门外,而且看不出是配置问题。
     if (!wanted.length) {
-      return { ...base, pass: 'unknown', reason: `门槛「${gate.label}」的学历要求无法识别` }
+      return { ...base, pass: 'unknown', reason: R.badDegreeGate(gate.label) }
     }
 
     // `in ["本科","硕士","博士"]` 是招聘里表达「本科及以上」最自然的写法
@@ -82,7 +112,7 @@ function judgeStructured(gate: StructuredGate, m: MergedResume): GateResult {
     // 而不是严格的集合包含 —— 否则列表漏写「博士」就会把博士判成不合格。
     const floor = Math.min(...wanted)
     const pass = gate.op === 'lte' ? got.rank <= Math.max(...wanted) : got.rank >= floor
-    return { ...base, pass, reason: `简历最高学历「${got.text}」,要求 ${gate.label}` }
+    return { ...base, pass, reason: R.degree(got.text, gate.label) }
   }
 
   const actual = readPath(m, gate.field)
@@ -94,7 +124,7 @@ function judgeStructured(gate: StructuredGate, m: MergedResume): GateResult {
   // 而下面 `in` 分支的 `v.includes('')` 恒为 true —— 城市空着的简历会被默默
   // 判成【通过】地点门槛。方向与「绝不默默判 false」相反,更难被发现。
   if (actual == null || String(actual).trim() === '') {
-    return { ...base, pass: 'unknown', reason: `简历中无法确定「${gate.label}」` }
+    return { ...base, pass: 'unknown', reason: R.unknown(gate.label) }
   }
 
   switch (gate.op) {
@@ -103,37 +133,37 @@ function judgeStructured(gate: StructuredGate, m: MergedResume): GateResult {
       const a = Number(actual)
       const b = Number(gate.value)
       if (Number.isNaN(a) || Number.isNaN(b)) {
-        return { ...base, pass: 'unknown', reason: `「${gate.label}」无法比较` }
+        return { ...base, pass: 'unknown', reason: R.notComparable(gate.label) }
       }
       const pass = gate.op === 'gte' ? a >= b : a <= b
       const est = gate.field.includes('totalYears') && m.derived.totalYearsEstimated
-        ? '(部分日期只有年份,为保守估算)'
+        ? R.estimated
         : ''
-      return { ...base, pass, reason: `简历为 ${a},要求 ${gate.op === 'gte' ? '≥' : '≤'} ${b}${est}` }
+      return { ...base, pass, reason: R.compare(a, gate.op === 'gte' ? '≥' : '≤', b, est) }
     }
     case 'eq':
       return {
         ...base,
         pass: String(actual) === String(gate.value),
-        reason: `简历为「${String(actual)}」,要求「${String(gate.value)}」`,
+        reason: R.eq(String(actual), String(gate.value)),
       }
     case 'in': {
       const list = (Array.isArray(gate.value) ? gate.value : [String(gate.value)])
         .map((v) => String(v).trim()).filter(Boolean)
       const got = String(actual).trim()
       if (!list.length) {
-        return { ...base, pass: 'unknown', reason: `门槛「${gate.label}」没有配置可选值` }
+        return { ...base, pass: 'unknown', reason: R.noOptions(gate.label) }
       }
       // 地点常写「深圳市南山区」而门槛写「深圳」,用包含匹配而不是全等。
       // 但两侧都要求至少 2 个字符 —— 否则单字门槛值会匹配上一堆无关地名。
       const pass = list.some((v) => (v.length >= 2 && got.includes(v)) || (got.length >= 2 && v.includes(got)))
-      return { ...base, pass, reason: `简历为「${got}」,要求属于 ${list.join(' / ')}` }
+      return { ...base, pass, reason: R.in(got, list.join(' / ')) }
     }
   }
 }
 
 /** 判所有结构化 gate。自然语言 gate 原样返回,交给 prompt 那一侧。 */
-export function judgeStructuredGates(gates: Gate[], m: MergedResume): {
+export function judgeStructuredGates(gates: Gate[], m: MergedResume, lang: Lang = 'zh'): {
   results: GateResult[]
   nlGates: Gate[]
 } {
@@ -141,7 +171,7 @@ export function judgeStructuredGates(gates: Gate[], m: MergedResume): {
   const nlGates: Gate[] = []
   for (const g of gates) {
     if (isNlGate(g)) nlGates.push(g)
-    else results.push(judgeStructured(g, m))
+    else results.push(judgeStructured(g, m, lang))
   }
   return { results, nlGates }
 }

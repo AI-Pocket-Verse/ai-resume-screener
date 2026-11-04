@@ -31,7 +31,7 @@ afterAll(async () => {
   await disconnectDb()
 })
 
-async function upload(app: App, batch: string | undefined, seed: string): Promise<string> {
+async function upload(app: App, batch: string | undefined, seed: string, extra: Record<string, string> = {}): Promise<string> {
   const job = await app.inject({
     method: 'POST', url: '/api/jobs', headers: { cookie: COOKIE }, payload: { teamId, title: `b-${seed}` },
   })
@@ -49,6 +49,7 @@ async function upload(app: App, batch: string | undefined, seed: string): Promis
     headers: {
       cookie: COOKIE, 'content-type': `multipart/form-data; boundary=${boundary}`,
       ...(batch ? { 'x-upload-batch': batch } : {}),
+      ...extra,
     },
   })
   expect(up.statusCode).toBe(201)
@@ -75,5 +76,14 @@ describe('x-upload-batch', () => {
     expect(a).not.toBe(b)
     expect(a).not.toContain(':1')
     expect(b).not.toBe('1')
+  })
+})
+
+describe('上传时记下界面语言(只用于完成通知)', () => {
+  it('X-Lang: en → 解析任务 lang=en;不带 → zh', async () => {
+    const en = await upload(u1, undefined, 'lang-en', { 'x-lang': 'en' })
+    const zh = await upload(u1, undefined, 'lang-zh')
+    expect((await prisma.parseJob.findFirstOrThrow({ where: { batchId: en } })).lang).toBe('en')
+    expect((await prisma.parseJob.findFirstOrThrow({ where: { batchId: zh } })).lang).toBe('zh')
   })
 })

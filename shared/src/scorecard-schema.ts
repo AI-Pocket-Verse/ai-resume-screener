@@ -128,6 +128,12 @@ export const EvaluationOutput = z.object({
 })
 export type EvaluationOutput = z.infer<typeof EvaluationOutput>
 
+/** 英文输出用:同样篇幅的英文按字符数是中文的 3-5 倍(60 字约合 40 个英文单词、
+ *  300 字符上下),沿用 120 字符上限会让英文总评几乎必然校验失败。 */
+export const EvaluationOutputEn = EvaluationOutput.extend({
+  summary: z.string().max(320, 'Keep the summary to about 40 words'),
+})
+
 // ── 精评的三项独有产出──────────────────────────────
 //
 // 精评的分层【不在输出格式】上 —— 「每条结论必须配引用」对粗评同样

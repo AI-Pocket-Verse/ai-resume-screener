@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 
 import { UserMenu } from '@ai-resume-screener/auth-client-web'
 
+import { useI18n, useLanguageMenuItems } from '@/i18n'
 import { useSkinMenuItems } from '@/lib/skin'
 
 import { ErrorBoundary } from './ErrorBoundary'
@@ -40,11 +41,12 @@ interface Props {
  * 内容区不加内边距，由页面自己决定布局。
  */
 export function Shell({ title, subtitle, actions, children }: Props) {
-  const skinItems = useSkinMenuItems()
+  const { t } = useI18n()
+  const menuItems = [...useLanguageMenuItems(), ...useSkinMenuItems()]
   return (
     <div className="flex h-screen bg-bg text-fg">
       <aside className="flex w-[64px] shrink-0 flex-col items-center border-r border-line bg-surface p-3">
-        <div className="mb-3 flex h-11 items-center" title="简历筛选">
+        <div className="mb-3 flex h-11 items-center" title={t('shell.productName')}>
           <span className="grid h-7 w-7 place-items-center rounded-md bg-accent text-accent-fg">
             <ResumeMark />
           </span>
@@ -52,7 +54,12 @@ export function Shell({ title, subtitle, actions, children }: Props) {
         <div className="flex-1" />
         {/* 触发器贴着视口底，必须向上展开 */}
         <div className="mt-3 border-t border-line pt-3">
-          <UserMenu avatarOnly placement="top-start" items={skinItems} />
+          <UserMenu
+            avatarOnly
+            placement="top-start"
+            items={menuItems}
+            labels={{ login: t('menu.login'), settings: t('menu.settings'), logout: t('menu.logout'), localUser: t('user.local') }}
+          />
         </div>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
