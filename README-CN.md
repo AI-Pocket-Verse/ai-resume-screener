@@ -4,6 +4,10 @@
 
 AI 简历筛选：按岗位 JD 生成评分卡，把各种格式的简历解析成结构化数据，再按评分卡分档打分；每条结论都附简历原文，最终由人来拍板。
 
+![演示：AI 评分卡、上传简历、分档、附原文的硬性门槛、精评、解析后的简历与语言切换](docs/screenshots/zh/demo.gif)
+
+▶ [观看高清演示视频（MP4，59 秒）](docs/media/demo-zh.mp4)
+
 - **岗位管理**：团队、岗位与 JD；按岗位成员隔离查看权限
 - **评分卡**：AI 根据 JD 生成评分卡草稿（维度、权重、5 / 3 / 1 分锚点、硬门槛），可人工调整，也可从其他岗位复制
 - **简历解析**：支持 PDF、图片（png / jpg / webp）、docx、粘贴文本，可批量拖拽上传；PDF 先渲染成页图再交给视觉模型抽取结构化字段
@@ -115,8 +119,16 @@ ANTHROPIC_API_KEY=...
 | `pnpm typecheck` | 全部包类型检查 |
 | `pnpm test` | 全部单元测试（api 测试使用独立的 `api/prisma/test.db`） |
 | `pnpm --filter @ai-resume-screener/api db:migrate` | 修改 `api/prisma/schema.prisma` 后生成并应用迁移 |
+| `pnpm demo-video` | 重新录制 README 里的中英文演示（见下文） |
 
 `api/scripts/` 下有几个开发脚本（用法写在各文件开头）：`parse-one.mts` 单独解析一份简历，`seed-demo.mts` 即上面的 `pnpm demo`（演示数据在 `demo-data.mts`），`eval-regress.mts` 改 prompt 后做评估回归对比（产出的 `eval-baseline.json` 含候选人姓名，已被 git 忽略）。
+
+### 重新录制演示
+
+`pnpm demo-video` 运行 [`scripts/demo-media.mjs`](scripts/demo-media.mjs)：按语言各启动一个真实 api（端口 4198，临时数据库在 `.tmp/demo-media/`），用 `pnpm demo` 造数据（虚构简历，真实调用模型，需要几分钟），在 4199 端口托管构建好的 web，再用 Playwright 驱动本机的 Google Chrome 录屏。产出 `docs/screenshots/{en,zh}/demo.gif` 和 `docs/media/demo-{en,zh}.mp4`。造好的数据库会存一份快照，再次录制不会重复调用模型；加 `--fresh` 重新造数据，加 `en` / `zh` 只录一种语言。
+
+- 需要 `api/.env.dev` 里配好可用的模型通道、PATH 中有 `ffmpeg`，以及 Playwright 的录屏组件（`pnpm exec playwright install ffmpeg`）。
+- 想用 Playwright 自带的 Chromium 代替 Chrome：执行 `pnpm exec playwright install chromium` 并设置 `PW_CHANNEL=`（留空）。
 
 需要更多团队时，可以直接调接口：`curl -X POST http://127.0.0.1:4070/api/teams -H 'Content-Type: application/json' -d '{"name":"研发团队"}'`。
 

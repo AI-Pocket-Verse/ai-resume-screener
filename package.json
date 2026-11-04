@@ -13,12 +13,14 @@
     "bootstrap": "node -e \"const fs=require('fs');if(!fs.existsSync('api/.env.dev'))fs.copyFileSync('api/.env.example','api/.env.dev')\" && pnpm --filter @ai-resume-screener/api db:migrate",
     "dev": "pnpm --parallel --filter @ai-resume-screener/api --filter @ai-resume-screener/web dev",
     "demo": "pnpm --filter @ai-resume-screener/api run demo",
+    "demo-video": "node scripts/demo-media.mjs",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\""
   },
   "devDependencies": {
+    "playwright": "1.64.1",
     "prettier": "^3.3.3"
   },
   "pnpm": {
@@ -26,7 +28,7 @@
       "@remix-run/router": ">=1.23.2",
       "react-router": ">=6.30.4 <7",
       "react-router-dom": ">=6.30.4 <7",
-            "micromatch": ">=4.0.8"
+      "micromatch": ">=4.0.8"
     }
   }
 }

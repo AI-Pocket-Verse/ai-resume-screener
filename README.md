@@ -4,6 +4,10 @@ English | [中文](README-CN.md)
 
 AI resume screening: generate a scorecard from a job description, parse resumes in any common format into structured data, then grade them against the scorecard. Every conclusion quotes the resume verbatim, and a human makes the final call.
 
+![Demo: AI scorecard, uploading resumes, grades, hard requirements with quotes, deep evaluation, the parsed resume and the language switch](docs/screenshots/en/demo.gif)
+
+▶ [Watch the full-quality demo video (MP4, 59 s)](docs/media/demo-en.mp4)
+
 - **Jobs**: teams, jobs and JDs; visibility is isolated by job membership
 - **Scorecards**: AI drafts a scorecard from the JD (dimensions, weights, 5 / 3 / 1 anchors, hard requirements); edit it by hand or copy one from another job
 - **Resume parsing**: PDF, images (png / jpg / webp), docx and pasted text, with drag-and-drop batch upload; PDFs are rendered to page images and read by a vision model
@@ -115,8 +119,16 @@ Notes:
 | `pnpm typecheck` | Type-check all packages |
 | `pnpm test` | Run all unit tests (api tests use a separate `api/prisma/test.db`) |
 | `pnpm --filter @ai-resume-screener/api db:migrate` | Create and apply a migration after changing `api/prisma/schema.prisma` |
+| `pnpm demo-video` | Re-record the README demo in both languages (see below) |
 
 `api/scripts/` has a few development scripts (usage at the top of each file): `parse-one.mts` parses a single resume, `seed-demo.mts` is the `pnpm demo` script above (demo data in `demo-data.mts`), and `eval-regress.mts` compares evaluations after a prompt change (its `eval-baseline.json` output contains candidate names and is ignored by git).
+
+### Re-recording the demo
+
+`pnpm demo-video` runs [`scripts/demo-media.mjs`](scripts/demo-media.mjs). For each language it starts the real api on port 4198 with a throwaway database under `.tmp/demo-media/`, fills it with `pnpm demo` data (fictional resumes, real model calls, a few minutes), serves the built web app on port 4199 and drives the locally installed Google Chrome with Playwright. Output: `docs/screenshots/{en,zh}/demo.gif` and `docs/media/demo-{en,zh}.mp4`. The seeded database is kept as a snapshot, so re-recording does not call the model again; pass `--fresh` to re-seed, or `en` / `zh` to record one language.
+
+- Needs a working model channel in `api/.env.dev`, `ffmpeg` on your PATH and Playwright's recorder (`pnpm exec playwright install ffmpeg`).
+- To use Playwright's bundled Chromium instead of Chrome, run `pnpm exec playwright install chromium` and set `PW_CHANNEL=` (empty).
 
 To add more teams, call the API directly: `curl -X POST http://127.0.0.1:4070/api/teams -H 'Content-Type: application/json' -d '{"name":"Engineering"}'`.
 
