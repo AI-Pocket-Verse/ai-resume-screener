@@ -1,0 +1,11 @@
+{
+  "name": "@ai-resume-screener/tsconfig",
+  "version": "0.0.0",
+  "private": true,
+  "files": [
+    "base.json",
+    "web.json",
+    "api.json",
+    "lib.json"
+  ]
+}

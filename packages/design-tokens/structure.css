@@ -1,0 +1,24 @@
+/**
+ * 结构层 token —— 三套皮肤共享,不随 data-skin 变化。
+ *
+ * 只有 8 个:4 档圆角 + 4 档阴影。
+ *
+ * 阴影的【几何】在这里,【颜色】在皮肤层的 --shadow-color ——
+ * 深色皮肤只需改那一个 token,四档阴影自动跟着变(浅色阴影在深底上不可见)。
+ *
+ * 字号【不设 token】,直接用 Tailwind 默认的 text-xs…text-2xl。
+ * 重定义会静默改掉所有现有写法。
+ */
+:root {
+  /* 圆角:7 档收敛成 4 档 */
+  --radius-sm: 6px;   /* 徽章、小标签 */
+  --radius-md: 10px;  /* 按钮、输入框 */
+  --radius-lg: 12px;  /* 卡片 */
+  --radius-xl: 16px;  /* 弹窗、大面板 */
+
+  /* 阴影:四套互不相干的命名(glass/glassLg/pop、am、indigo/slate、tailwind 默认)统一成 4 档 */
+  --shadow-none: none;
+  --shadow-sm: 0 1px 2px rgb(var(--shadow-color) / 0.06);
+  --shadow-md: 0 6px 24px rgb(var(--shadow-color) / 0.12), 0 2px 6px rgb(var(--shadow-color) / 0.06);
+  --shadow-lg: 0 20px 60px rgb(var(--shadow-color) / 0.20), 0 4px 14px rgb(var(--shadow-color) / 0.08);
+}

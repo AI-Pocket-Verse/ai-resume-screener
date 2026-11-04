@@ -1,0 +1,32 @@
+[Unit]
+Description=ai-resume-screener API
+After=network.target
+
+[Service]
+Type=simple
+User=__SERVICE_USER__
+Group=__SERVICE_USER__
+WorkingDirectory=__INSTALL_DIR__/api
+EnvironmentFile=__INSTALL_DIR__/api/.env.prod
+# The service user must be able to run `pdfinfo` / `pdftocairo`, and — only if a
+# purpose uses LLM_PROVIDER=claude — `claude` (installed and logged in once as that
+# user). Add their directories here if they are not on this PATH, or set CLAUDE_BIN.
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+# 内部包（packages/*、shared）以 TS 源码形式被引用，需要 tsx 加载器才能运行
+ExecStart=/usr/bin/node --import tsx __INSTALL_DIR__/api/dist/index.js
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=15
+
+# Sandboxing. ProtectHome is off: the claude CLI keeps its login under the
+# service user's home directory.
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+
+LimitNOFILE=4096
+MemoryMax=4G
+
+[Install]
+WantedBy=multi-user.target

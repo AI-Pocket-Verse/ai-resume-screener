@@ -1,0 +1,46 @@
+# 简历含个人信息,必须走 HTTPS。证书可用 certbot 等工具签发,把下面两个证书路径换成实际位置。
+server {
+    listen 80;
+    server_name __SERVER_NAME__;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name __SERVER_NAME__;
+
+    ssl_certificate     __SSL_CERT__;
+    ssl_certificate_key __SSL_KEY__;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+
+    # 安全响应头。CSP 只放行同源资源;前端没有内联脚本(首屏皮肤脚本是 /skin-init.js)。
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    add_header X-Frame-Options           "DENY" always;
+    add_header X-Content-Type-Options    "nosniff" always;
+    add_header Referrer-Policy           "no-referrer" always;
+    add_header Content-Security-Policy   "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'" always;
+
+    # Resumes are capped at 20 MB by the api.
+    client_max_body_size 25m;
+
+    # Static frontend (built artifact)
+    root __INSTALL_DIR__/web/dist;
+    index index.html;
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:4070;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $remote_addr;  # 覆盖而非追加:客户端不能伪造 XFF 绕过限流
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # SPA fallback
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    access_log /var/log/nginx/ai-resume-screener.access.log;
+    error_log  /var/log/nginx/ai-resume-screener.error.log;
+}

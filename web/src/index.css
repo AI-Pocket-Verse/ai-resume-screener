@@ -1,0 +1,25 @@
+/**
+ * 皮肤 token 必须在 @tailwind 之前引入 —— 它们定义的是 CSS 变量,
+ * Tailwind 生成的规则(rgb(var(--accent) / …))在运行时读取这些变量。
+ *
+ * 加第四套皮肤 = 在 design-tokens 里加一个 skins/d.css 并在这里多引一行,
+ * 产品代码零改动。
+ */
+@import '@ai-resume-screener/design-tokens/structure.css';
+@import '@ai-resume-screener/design-tokens/skins/a.css';
+@import '@ai-resume-screener/design-tokens/skins/b.css';
+@import '@ai-resume-screener/design-tokens/skins/c.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-bg text-fg font-sans;
+}

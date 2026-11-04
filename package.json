@@ -1,0 +1,31 @@
+{
+  "name": "ai-resume-screener",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AI resume screening: scorecards from a JD, structured parsing of PDF / image / docx resumes, tiered evaluation with evidence quotes",
+  "license": "MIT",
+  "packageManager": "pnpm@9.0.0",
+  "engines": {
+    "node": ">=20.19",
+    "pnpm": ">=9"
+  },
+  "scripts": {
+    "bootstrap": "node -e \"const fs=require('fs');if(!fs.existsSync('api/.env.dev'))fs.copyFileSync('api/.env.example','api/.env.dev')\" && pnpm --filter @ai-resume-screener/api db:migrate",
+    "dev": "pnpm --parallel --filter @ai-resume-screener/api --filter @ai-resume-screener/web dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\""
+  },
+  "devDependencies": {
+    "prettier": "^3.3.3"
+  },
+  "pnpm": {
+    "overrides": {
+      "@remix-run/router": ">=1.23.2",
+      "react-router": ">=6.30.4 <7",
+      "react-router-dom": ">=6.30.4 <7",
+            "micromatch": ">=4.0.8"
+    }
+  }
+}

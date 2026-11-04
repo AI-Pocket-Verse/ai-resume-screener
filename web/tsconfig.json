@@ -1,0 +1,8 @@
+{
+  "extends": "@ai-resume-screener/tsconfig/web.json",
+  "include": ["src", "vite.config.ts", "tailwind.config.ts"],
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": { "@/*": ["src/*"] }
+  }
+}

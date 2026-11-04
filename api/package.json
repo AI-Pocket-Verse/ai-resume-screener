@@ -1,0 +1,44 @@
+{
+  "name": "@ai-resume-screener/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file=.env.dev src/index.ts",
+    "prebuild": "prisma generate",
+    "build": "tsc",
+    "start": "node --import tsx --env-file=.env.prod dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "pretest": "DATABASE_URL=\"file:./test.db\" prisma migrate deploy",
+    "db:migrate": "node --env-file=.env.dev node_modules/prisma/build/index.js migrate dev",
+    "db:migrate:prod": "node --env-file=.env.prod node_modules/prisma/build/index.js migrate deploy",
+    "db:generate": "prisma generate",
+    "postinstall": "prisma generate",
+    "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@ai-resume-screener/api-kit": "workspace:*",
+    "@ai-resume-screener/auth-client-api": "workspace:*",
+    "@ai-resume-screener/llm-kit": "workspace:*",
+    "@ai-resume-screener/shared": "workspace:*",
+    "@fastify/cors": "^11.0.0",
+    "@fastify/multipart": "^10.0.0",
+    "@fastify/rate-limit": "^11.0.0",
+    "@paralleldrive/cuid2": "^3.3.0",
+    "@prisma/client": "5.22.0",
+    "fastify": "5.12.8",
+    "file-type": "^21.3.4",
+    "mammoth": "^1.8.0",
+    "tsx": "^4.16.2",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@ai-resume-screener/tsconfig": "workspace:*",
+    "@types/node": "^20.14.10",
+    "jszip": "3.10.2",
+    "prisma": "5.22.0",
+    "typescript": "5.9.3",
+    "vitest": "4.1.12"
+  }
+}

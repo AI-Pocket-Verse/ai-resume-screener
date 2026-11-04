@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+*.tsbuildinfo
+coverage/
+
+# Env — only the .example template is committed
+.env
+.env.*
+!.env.example
+
+# Runtime data (SQLite, uploads, outputs, backups)
+api/data/
+api/prisma/*.db
+api/prisma/*.db-journal
+api/prisma/*.db-wal
+api/prisma/*.db-shm
+api/test.db*
+
+# Generated Prisma client (`pnpm install` regenerates it)
+api/generated/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+*.swp
+
+# Private notes, scratch files, local AI tool config
+.private/
+.tmp/
+.claude/settings.local.json
+AGENTS.md
+CLAUDE.md
+ROADMAP.md
+.playwright-mcp/
+
+# Test-only file storage
+api/data-test/
+
+# eval-regress.mts 的基线快照，含候选人姓名
+eval-baseline.json

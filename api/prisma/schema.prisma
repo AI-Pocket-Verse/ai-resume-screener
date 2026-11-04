@@ -1,0 +1,490 @@
+// ai-resume-screener —— AI 简历筛选与 JD 匹配评估
+//
+// ⚠️ 改这个文件 = test / dev / prod 三个库都要对上:
+//   test  自动:pretest 对 prisma/test.db 跑 migrate deploy
+//   dev   【手动,最易漏】:pnpm --filter @ai-resume-screener/api db:migrate
+//   prod  自动:部署时 deploy.sh 跑 migrate deploy
+//
+// 几处不显然的取舍:
+//   - 多值联系方式下沉成 CandidateIdentifier(SQLite 不支持标量数组,且单值
+//     phoneHash 会让「合并做得越多、后续去重越漏」)
+//   - 合并只写 mergedIntoId,不动任何子行 → 撤销 = 置 null,不需要行级回滚器
+//   - Application 【没有】analysisState:分析状态从 EvalJob 派生,避免双真相源
+
+generator client {
+  provider = "prisma-client-js"
+  // 生成到本包自己的目录,不写进共享的 node_modules/.prisma/client ——
+  // 同一台机器上有多个 Prisma 项目时,谁最后 generate 谁赢。
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ── 人与可见性 ────────────────────────────────────────────────────
+
+/// 本地用户。SSO 只回答「这是谁」,产品自己要记住「有哪些人」——
+/// 否则「把某人加进岗位」时那个选人框根本没有数据源(auth 不提供用户列表)。
+/// 登录时 JIT 落库。
+model User {
+  id String @id @default(cuid())
+
+  /// 飞书 open_id。**主键锚点必须是它,不是 auth 的 cuid** ——
+  /// cuid 在 auth 库重置/迁移后会变,那时同一个人会分叉成两条本地记录,
+  /// 岗位成员关系、上传归属全部对不上。
+  ssoId String @unique
+
+  name      String
+  email     String?
+  /// 超管判定要用。飞书按应用权限决定下不下发,所以可空 —— 拿不到时
+  /// 该用户就不可能是超管(判定短路),而不是报错。
+  mobile    String?
+  avatarUrl String?
+
+  createdAt  DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+
+  memberships JobMember[]
+}
+
+/// 岗位成员。**可见性的唯一依据**:候选人属于岗位,不属于录入他的人 ——
+/// 按上传者隔离会让面试官看不到评估、人一休假数据就不可达。
+model JobMember {
+  id     String @id @default(cuid())
+  jobId  String
+  userId String
+
+  /// owner = 建岗者,可增删成员;member = 参与人。
+  /// 不做更细的权限档:岗位内是协作关系,再分档只会让人绕过工具。
+  role String @default("member")
+
+  addedBy String?
+  addedAt DateTime @default(now())
+
+  job  Job  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, userId])
+  @@index([userId])
+}
+
+// ── 组织 ──────────────────────────────────────────────────────────
+
+/// 团队。平铺,刻意不做层级嵌套:一个团队通常就是一个招聘单元,
+/// 再分层会带来递归权限判定与树形控件,却很少有实际作用。
+model Team {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  ownerId     String // 团队负责人 → 该团队所有岗位的全权
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  jobs Job[]
+
+  @@index([ownerId])
+}
+
+model Job {
+  id        String  @id @default(cuid())
+  teamId    String
+  title     String
+  location  String?
+  level     String? // 如「P6」「高级」
+  headcount Int     @default(1)
+  status    String  @default("open") // open | paused | closed
+
+  jdRaw    String // JD 原文(markdown)
+  jdSource String @default("paste") // paste | feishu_doc | feishu_hire
+
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  team         Team          @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  scorecard    Scorecard?
+  applications Application[]
+  members      JobMember[]
+  resumeFiles  ResumeFile[]
+  tags         CandidateTag[]
+
+  @@index([teamId, status])
+}
+
+/// 评分卡:一个岗位一张,直接可编辑,不做版本表。
+/// 历史可解释性由 Evaluation.scorecardSnapshot 承担 —— 高频改权重 × 不可变
+/// 版本 = 频繁产生新版本 + 频繁置灰历史评估,成本高且体验更差。
+model Scorecard {
+  id         String   @id @default(cuid())
+  jobId      String   @unique
+  gates      String // Json: [{key,label,type,required,...}]
+  dimensions String // Json: [{key,label,weight,anchors:{5,3,1}}]
+  updatedBy  String
+  updatedAt  DateTime @updatedAt
+  createdAt  DateTime @default(now())
+
+  job         Job          @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  evaluations Evaluation[]
+}
+
+// ── 候选人 ────────────────────────────────────────────────────────
+
+model Candidate {
+  id   String  @id @default(cuid())
+  name String?
+
+  /// 软合并指向主记录。**禁止链式**:目标自身必须 mergedIntoId IS NULL
+  /// (校验放在写入时)。撤销 = 置 null,子行一行不动。
+  mergedIntoId String?
+
+  /// 「最后活动时间早于 X」批量清理要用。不冗余存的话该筛选要跨三表全表扫。
+  lastActivityAt DateTime  @default(now())
+  piiRedactedAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  mergedInto   Candidate?            @relation("CandidateMerge", fields: [mergedIntoId], references: [id], onDelete: SetNull)
+  mergedFrom   Candidate[]           @relation("CandidateMerge")
+  identifiers  CandidateIdentifier[]
+  aliases      CandidateAlias[]
+  tags         CandidateTag[]
+  resumeFiles  ResumeFile[]
+  applications Application[]
+
+  @@index([mergedIntoId])
+  @@index([lastActivityAt])
+  /// 弱匹配去重每收一份简历就按 name 精确查一次(attachResume 第 3 步),
+  /// 没索引就是每份简历一次全表扫 —— 候选人上千后批量上传会明显变慢。
+  @@index([name])
+}
+
+/// 手机/邮箱。**下沉成表而非数组的两个理由**:
+///   ① Prisma 在 SQLite 上不支持标量数组(用 Json 存则无法建索引/唯一约束)
+///   ② 去重键若是单值,张三首投用 A 号建档、合并进 B 号后,`phoneHash` 只能存
+///      一个 → 他用 B 号再投时强匹配查不到,又建出一个重复候选人。
+///      **合并做得越多,后续去重越容易漏**,而自动合并的全部价值建立在「查得到」上。
+model CandidateIdentifier {
+  id          String  @id @default(cuid())
+  candidateId String
+  kind        String // "phone" | "email"
+  valueHash   String // normalize 后 sha256
+  valueEnc    String // 明文(明文存 + 接口层脱敏 + 审计日志)
+  isPrimary   Boolean @default(false)
+
+  candidate Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  /// 让并发插入在 DB 层退化成「命中已有主体」,消除自动合并的竞态。
+  @@unique([kind, valueHash])
+  @@index([candidateId])
+}
+
+model CandidateAlias {
+  id          String @id @default(cuid())
+  candidateId String
+  alias       String
+
+  candidate Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@unique([candidateId, alias])
+}
+
+/// HR 手动打的业务标签(「内推」「急聘」「备胎」)。与 ResumeParsed.editedFields
+/// 分开存:那个是【对 AI 抽错的修正】,这个是 HR 新增的信息,可跨岗位筛选。
+model CandidateTag {
+  id          String   @id @default(cuid())
+  candidateId String
+  /// 标签属于岗位:「已面过」在 A 岗位成立、在 B 岗位不成立。不带 jobId 的话
+  /// 同事在别的岗位打的标签会出现在你界面上 —— 那是隔离唯一漏掉的一处。
+  jobId       String
+  label       String
+  color       String?
+  createdBy   String
+  createdAt   DateTime @default(now())
+
+  candidate Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  job       Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([candidateId, jobId, label])
+  @@index([label])
+  @@index([jobId])
+}
+
+// ── 简历文件与解析 ────────────────────────────────────────────────
+
+model ResumeFile {
+  id          String  @id @default(cuid())
+  candidateId String?
+
+  /// 为哪个岗位上传的。**必填** —— 上传时就选,不存在「无主简历」这种
+  /// 规则覆盖不到的中间状态(可见性按岗位算,没有 jobId 就没法算)。
+  /// 解析完成后据此自动建 Application,省掉手动「投递」这一步。
+  jobId String
+
+  source      String // paste | upload | feishu_hire | feishu_drive
+  externalId  String? // 飞书侧 id,同步时用
+  /// 文件级去重:同内容不重复落盘。**刻意不复用解析结果** —— 跨文件复用只省
+  /// 一次 2 分钟解析,却要换来四元组唯一约束 + 一类极难复现的跨团队串扰 bug。
+  sha256      String
+  filename    String
+  mimeType    String
+  bytes       Int
+  pageCount   Int?
+  storagePath String
+
+  /// 唯一写入方 = 解析队列。pending → rendering → extracting → parsed | failed
+  parseState     String  @default("pending")
+  /// 仅 failed 时有值:①~⑤ 哪一步失败,便于定向重试。
+  parseStage     String?
+  /// 归一化错误码,不是原始错误信息(原始信息可能含 PII 或路径)。
+  parseError     String?
+  /// 模型是否撞到 max-turns 上限。撞顶意味着后面几页【没读到】,
+  /// 结果不完整却看起来正常 —— 必须显式标记而非静默接受。
+  turnsExhausted Boolean @default(false)
+
+  uploadedById String
+  uploadedAt   DateTime @default(now())
+
+  candidate Candidate?    @relation(fields: [candidateId], references: [id], onDelete: SetNull)
+  job       Job           @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  parsed    ResumeParsed?
+  parseJobs ParseJob[]
+
+  @@index([parseState])
+  @@index([sha256])
+  @@index([candidateId])
+  @@index([jobId])
+  /// 文件列表默认按上传时间倒序(routes/files.ts),没索引时每次都要全表排序。
+  @@index([uploadedAt])
+}
+
+/// 解析队列。与 EvalJob 同构,但挂在【文件】上而非投递上 —— 解析属于文件、
+/// 评估属于投递,两者生命周期不同(解析自动、评估手动)。
+model ParseJob {
+  id           String @id @default(cuid())
+  resumeFileId String
+
+  status  String @default("queued") // queued | running | done | failed
+  attempt Int    @default(0)
+
+  nextRunAt  DateTime  @default(now())
+  lastError  String?
+  startedAt  DateTime?
+  finishedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  /// = resumeFileId,**仅非终态时有值**。@@unique 让「同一文件重复入队」在
+  /// DB 层直接失败,不需要应用层查一遍再插(那中间有竞态窗口)。
+  activeKey String?
+
+  /// 同一次操作(一次批量分析 / 一次多文件上传)共用一个 batchId,配合 createdBy
+  /// 支撑「这一批跑完了通知我」—— 没有它就只能逐个通知,20 份简历轰 20 条卡片。
+  batchId   String?
+  /// 发起人的 ssoId(飞书 open_id)。通知要推给他,而不是推给全体。
+  createdBy String?
+
+  resumeFile ResumeFile @relation(fields: [resumeFileId], references: [id], onDelete: Cascade)
+
+  @@unique([activeKey])
+  @@index([status, nextRunAt])
+  @@index([resumeFileId])
+  @@index([batchId])
+}
+
+model ResumeParsed {
+  id           String @id @default(cuid())
+  resumeFileId String @unique
+
+  parserVersion String
+  promptVersion String
+  providerId    String
+  model         String?
+  /// document | image | text —— 这份是怎么喂给模型的,供溯源。
+  deliveryMode  String
+
+  /// AI 原始抽取结果(ResumeExtraction)。**永不覆写** —— 保留它才能算
+  /// 「AI 抽取准确率」,也才能撤销人工纠错。
+  raw          String
+  /// 人工纠错的【覆盖层】,只存被改动的字段。读取时叠加在 raw 之上。
+  editedFields String @default("{}")
+  /// 规则算出的派生字段(totalYears / jobHopCount / timelineConflicts …)。
+  /// LLM 只负责抽取起止年月,年限一律代码算 —— 模型算日期不准是通病。
+  derived      String @default("{}")
+
+  latencyMs Int?
+  tokenCost Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  resumeFile ResumeFile @relation(fields: [resumeFileId], references: [id], onDelete: Cascade)
+}
+
+// ── 投递与评估 ────────────────────────────────────────────────────
+
+/// 投递 = 候选人 × 岗位。
+/// **没有 analysisState 字段**:分析状态从 EvalJob 派生(无 job = 未分析)。
+/// 存两份的话「Application 说分析中、EvalJob 说 failed」这种非法组合迟早出现,
+/// 表现为「列表永远转圈 + 一个无事可做的取消按钮」,且不可恢复。
+model Application {
+  id          String @id @default(cuid())
+  candidateId String
+  jobId       String
+
+  /// **唯一的候选人状态真相源**。本产品只做筛选,面试/offer 等
+  /// 后续流程全部走飞书,不在系统内建模。
+  /// 谁建的这条投递。现在完全无法判断归属 —— 排查「这个人怎么进来的」时
+  /// 只能靠猜。
+  createdById String?
+
+  hrDecision  String? // pass | reject | hold | null
+  hrDecidedBy String?
+  hrDecidedAt DateTime?
+  hrReason    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  candidate   Candidate    @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  job         Job          @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  evaluations Evaluation[]
+  evalJobs    EvalJob[]
+
+  @@unique([candidateId, jobId])
+  @@index([jobId, hrDecision])
+}
+
+model Evaluation {
+  id            String @id @default(cuid())
+  applicationId String
+  tier          String // screen(粗评,可批量) | deep(精评,单份手动)
+
+  /// 评估当时的 {gates,dimensions} 全量副本。取代版本表回答「这个分怎么来的」。
+  scorecardSnapshot String
+  scorecardId       String?
+
+  /// 三个版本号必须全存,否则「为什么这份分变了」永远查不清。
+  promptVersion String
+  parserVersion String
+  providerId    String
+  model         String?
+
+  gateResults   String // Json
+  scores        String // Json
+  highlights    String // Json
+  concerns      String // Json
+  summary       String?
+  grade         String? // A | B | C | D
+  weightedScore Float?
+
+  /// 精评覆盖粗评时,旧记录指向新记录。只表达「作废」,不表达「当前显示哪条」
+  /// ——后者按 (applicationId, tier) 取 max(createdAt)。
+  supersededBy String?
+
+  /// 附加产出的 JSON:
+  ///   breakdown    逐维度「分 × 权重 = 贡献」,供「这个分怎么来的」一键展开
+  ///   followUpQuestions / verdict   精评独有
+  ///   peerContext  横向定位,精评独有,由代码算
+  /// 放一个字段而不是各开一列:这些都是**只读渲染**用的整体,不参与任何查询
+  /// 与排序,拆列只会让 schema 随 UI 变动而反复迁移。
+  extras String @default("{}")
+
+  latencyMs Int?
+  tokenCost Int?
+
+  /// **必须有**:一致率指标要知道 HR 是在看到 AI 结论【之前还是之后】
+  /// 做的决定,否则测的是 AI 对 HR 的影响,不是 AI 的准确率。
+  /// 注:cuid 不单调递增,不能靠 id 排序。
+  createdAt DateTime @default(now())
+  createdBy String?
+
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  scorecard   Scorecard?  @relation(fields: [scorecardId], references: [id], onDelete: SetNull)
+
+  @@index([applicationId, tier, createdAt])
+}
+
+/// 评估队列。与 ParseJob 同构。
+model EvalJob {
+  id            String @id @default(cuid())
+  applicationId String
+  tier          String
+
+  status  String @default("queued") // queued | running | done | failed
+  attempt Int    @default(0)
+
+  nextRunAt  DateTime  @default(now())
+  lastError  String?
+  startedAt  DateTime?
+  finishedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  /// = "<applicationId>:<tier>",仅非终态时有值。防重复入队。
+  activeKey String?
+
+  /// 同一次操作(一次批量分析 / 一次多文件上传)共用一个 batchId,配合 createdBy
+  /// 支撑「这一批跑完了通知我」—— 没有它就只能逐个通知,20 份简历轰 20 条卡片。
+  batchId   String?
+  /// 发起人的 ssoId(飞书 open_id)。通知要推给他,而不是推给全体。
+  createdBy String?
+
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@unique([activeKey])
+  @@index([status, nextRunAt])
+  @@index([applicationId])
+  @@index([batchId])
+}
+
+// ── 去重与审计 ────────────────────────────────────────────────────
+
+/// 弱匹配(如同名不同号)的提示记录。没有它,HR 点了「忽略」也无处记,
+/// 提示条会永远重复弹。
+model DuplicateHint {
+  id           String    @id @default(cuid())
+  candidateId  String
+  otherId      String
+  matchedField String // name | phone_partial | email_local …
+  score        Float
+  dismissedAt  DateTime?
+  dismissedBy  String?
+  createdAt    DateTime  @default(now())
+
+  @@unique([candidateId, otherId])
+  @@index([dismissedAt])
+}
+
+/// 合并记录。现在退化成【纯审计】:合并不修改任何子行,
+/// 所以不需要 snapshot / movedRows 这类行级回滚数据。
+model MergeLog {
+  id              String    @id @default(cuid())
+  fromCandidateId String
+  intoCandidateId String
+  matchedField    String?
+  autoMerged      Boolean   @default(false)
+  reason          String?
+  createdBy       String
+  createdAt       DateTime  @default(now())
+  undoneAt        DateTime?
+  undoneBy        String?
+
+  @@index([fromCandidateId])
+  @@index([intoCandidateId])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  actorId     String
+  action      String // view_pii | export | delete | merge | undo_merge
+  targetType  String
+  targetId    String?
+  /// 目标的可读标签快照。业务数据硬删后 targetId 会悬空,存一份标签
+  /// 才能让审计记录在删除后仍然可读 —— 很便宜,漏了就补不回来。
+  targetLabel String?
+  detail      String?
+  at          DateTime @default(now())
+
+  @@index([targetType, targetId, at])
+  @@index([actorId, at])
+}
