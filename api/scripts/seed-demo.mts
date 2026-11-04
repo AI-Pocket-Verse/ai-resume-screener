@@ -1,141 +1,107 @@
-// 建一套演示数据:团队 → 岗位 → 评分卡 → 3 位候选人(真实跑解析与评估)。
+// 一键造演示数据:岗位 → AI 评分卡 → 四份虚构简历 → 粗评全部 → 精评最强的一位。
 //
-// 这不只是造数据 —— 它走的是【和生产完全相同的服务层】,所以同时是一次
-// 端到端集成验证:上传落盘 → 渲染 → 解析 → 去重挂主体 → 建投递 → 评估 → 写库。
-// 任何一环的 schema 对不上都会当场炸,而单测覆盖不到这条链。
+//   pnpm dev          # 先在一个终端把服务跑起来(本地单用户模式)
+//   pnpm demo         # 另一个终端:按系统语言造一套
+//   pnpm demo en      # 或指定 zh / en
 //
-//   node --env-file=.env.dev --import tsx scripts/seed-demo.mts <jd.txt> <a.pdf> ...
-import { readFile } from 'node:fs/promises'
-import { basename } from 'node:path'
-import { Scorecard } from '@ai-resume-screener/shared'
-import { prisma, initDb } from '../src/db.js'
-import { storeResumeFile } from '../src/services/file-store.js'
-import { renderPdf } from '../src/services/render.js'
-import { extractResume } from '../src/services/parse/extract.js'
-import { deriveFields } from '../src/services/parse/derive.js'
-import { PARSER_VERSION, PROMPT_VERSION } from '../src/services/parse/prompt.js'
-import { attachResume } from '../src/services/dedup/merge.js'
-import { draftScorecard } from '../src/services/evaluate/evaluate.js'
-import { runEvaluation } from '../src/services/evaluate/queue.js'
+// 走的是和界面完全相同的 HTTP 接口(粘贴简历 → 解析队列 → 评估队列),请求带 X-Lang,
+// 所以评分卡、评估结论、面试追问都是对应语言。数据见 demo-data.mts,全部虚构。
+// 只支持本地模式:接了飞书登录后脚本拿不到会话,请在界面里手动操作。
+// API 地址默认 http://127.0.0.1:4070,可用 API_URL 覆盖;WEB_URL 只用于最后打印链接。
+import { DEMO } from './demo-data.mjs'
 
-const [jdPath, ...files] = process.argv.slice(2)
-if (!jdPath || !files.length) {
-  console.error('usage: ... seed-demo.mts <jd.txt> <resume.pdf> ...')
+type Lang = 'zh' | 'en'
+
+function systemLang(): Lang {
+  const loc = process.env.LC_ALL || process.env.LC_MESSAGES || process.env.LANG || Intl.DateTimeFormat().resolvedOptions().locale
+  return /^zh/i.test(loc) ? 'zh' : 'en'
+}
+
+const arg = process.argv[2]
+if (arg && arg !== 'zh' && arg !== 'en') {
+  console.error('usage: pnpm demo [zh|en]')
   process.exit(1)
 }
+const lang: Lang = (arg as Lang | undefined) ?? systemLang()
+const data = DEMO[lang]
+const API = (process.env.API_URL ?? 'http://127.0.0.1:4070').replace(/\/$/, '')
+const WEB = (process.env.WEB_URL ?? 'http://localhost:5070').replace(/\/$/, '')
+const say = (zh: string, en: string) => console.log(`[demo] ${lang === 'zh' ? zh : en}`)
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
-await initDb()
-const jdRaw = await readFile(jdPath, 'utf8')
-const jobTitle = jdRaw.split('\n')[0]!.replace(/^#\s*/, '').trim()
-const ACTOR = 'seed-script'
-
-const team = await prisma.team.upsert({
-  where: { name: '交易平台团队' },
-  create: { name: '交易平台团队', description: '负责交易核心链路', ownerId: ACTOR },
-  update: {},
-})
-console.log(`[seed] team ${team.name}`)
-
-let job = await prisma.job.findFirst({ where: { teamId: team.id, title: jobTitle } })
-if (!job) {
-  job = await prisma.job.create({
-    data: { teamId: team.id, title: jobTitle, jdRaw, location: '深圳', level: '高级', createdBy: ACTOR },
+async function api<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const r = await fetch(API + path, {
+    method,
+    headers: { 'X-Lang': lang, ...(body ? { 'content-type': 'application/json' } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  }).catch(() => {
+    throw new Error(lang === 'zh' ? `连不上 ${API},请先运行 pnpm dev` : `Cannot reach ${API}. Run pnpm dev first.`)
   })
-}
-console.log(`[seed] job ${job.title}`)
-
-// ── 评分卡 ────────────────────────────────────────────────────────
-let scorecardRow = await prisma.scorecard.findUnique({ where: { jobId: job.id } })
-if (!scorecardRow) {
-  console.log('[seed] 按 JD 生成评分卡…')
-  const d = await draftScorecard(job.title, jdRaw)
-  if (!d.scorecard) throw new Error(`评分卡生成失败: ${d.error}`)
-  scorecardRow = await prisma.scorecard.create({
-    data: {
-      jobId: job.id,
-      gates: JSON.stringify(d.scorecard.gates),
-      dimensions: JSON.stringify(d.scorecard.dimensions),
-      updatedBy: ACTOR,
-    },
-  })
-}
-const scorecard = Scorecard.parse({
-  gates: JSON.parse(scorecardRow.gates),
-  dimensions: JSON.parse(scorecardRow.dimensions),
-})
-console.log(`[seed] scorecard 维度 ${scorecard.dimensions.length} 个 / 门槛 ${scorecard.gates.length} 条`)
-
-// ── 上传 + 解析 + 去重 ────────────────────────────────────────────
-const applicationIds: string[] = []
-for (const f of files) {
-  const buf = await readFile(f)
-  const stored = await storeResumeFile(buf, 'application/pdf')
-
-  let file = await prisma.resumeFile.findFirst({ where: { sha256: stored.sha256 } })
-  if (!file) {
-    file = await prisma.resumeFile.create({
-      data: {
-        source: 'upload', sha256: stored.sha256, filename: basename(f),
-        mimeType: stored.mimeType, bytes: stored.bytes, storagePath: stored.storagePath,
-        uploadedById: ACTOR,
-      },
-    })
+  const json = await r.json().catch(() => null)
+  if (r.status === 401) {
+    throw new Error(lang === 'zh' ? '需要登录:演示脚本只支持本地单用户模式' : 'Login required: the demo script only works in local single-user mode')
   }
+  if (!r.ok) throw new Error(`${method} ${path} → ${r.status} ${JSON.stringify(json)}`)
+  return json as T
+}
 
-  if (!(await prisma.resumeParsed.findUnique({ where: { resumeFileId: file.id } }))) {
-    const r0 = await renderPdf(stored.storagePath, stored.sha256)
-    const r = await extractResume({ imagePaths: r0.pagePaths })
-    if (!r.data) throw new Error(`解析失败 ${basename(f)}: ${r.error}`)
-    await prisma.resumeParsed.create({
-      data: {
-        resumeFileId: file.id,
-        parserVersion: PARSER_VERSION, promptVersion: PROMPT_VERSION,
-        providerId: 'claude', model: r.model, deliveryMode: r.deliveryMode,
-        raw: JSON.stringify(r.data), derived: JSON.stringify(deriveFields(r.data)),
-        latencyMs: r.latencyMs,
-      },
-    })
-    await prisma.resumeFile.update({
-      where: { id: file.id },
-      data: { parseState: 'parsed', pageCount: r0.totalPages },
-    })
-    const attached = await attachResume(file.id, r.data)
-    console.log(`[seed] parsed ${basename(f)} → ${r.data.basic.name} (${attached.outcome})`)
+/** 每 5 秒查一次,直到 done() 为真;超时抛错(模型调用每份约 1-2 分钟)。 */
+async function waitFor(what: string, done: () => Promise<boolean>, minutes = 20): Promise<void> {
+  const deadline = Date.now() + minutes * 60_000
+  while (!(await done())) {
+    if (Date.now() > deadline) throw new Error(`timeout: ${what}`)
+    await sleep(5000)
   }
+}
 
-  const fresh = await prisma.resumeFile.findUnique({ where: { id: file.id } })
-  const candidateId = fresh!.candidateId!
-  const app = await prisma.application.upsert({
-    where: { candidateId_jobId: { candidateId, jobId: job.id } },
-    create: { candidateId, jobId: job.id },
-    update: {},
+interface Row { applicationId: string; name: string | null; verdict: { grade: string | null; score: number | null; source: string } | null }
+
+const teams = await api<Array<{ id: string }>>('GET', '/api/teams')
+if (!teams.length) throw new Error('no team')
+const jobs = await api<Array<{ id: string; title: string }>>('GET', '/api/jobs')
+// 同名岗位已存在 → 不重建,只把没跑完的步骤补上(脚本中途被打断后可以直接重跑)。
+let jobId = jobs.find((j) => j.title === data.job.title)?.id
+if (jobId) {
+  say(`已有岗位「${data.job.title}」,继续未完成的步骤`, `Job "${data.job.title}" already exists; continuing unfinished steps`)
+} else {
+  jobId = (await api<{ id: string }>('POST', '/api/jobs', {
+    teamId: teams[0]!.id, title: data.job.title, jdRaw: data.job.jd,
+    location: data.job.location, level: data.job.level, headcount: data.job.headcount,
+  })).id
+  say(`已建岗位「${data.job.title}」,正在按 JD 生成评分卡…`, `Created job "${data.job.title}". Drafting the scorecard from the JD…`)
+  const draft = await api<unknown>('POST', `/api/jobs/${jobId}/scorecard/draft`)
+  await api('PUT', `/api/jobs/${jobId}/scorecard`, draft)
+
+  say(`上传 ${data.resumes.length} 份简历并解析(每份约 1-2 分钟,并行进行)…`,
+    `Uploading ${data.resumes.length} resumes and parsing them (about 1-2 minutes each, in parallel)…`)
+  const fileIds: string[] = []
+  for (const r of data.resumes) {
+    fileIds.push((await api<{ id: string }>('POST', '/api/files/paste', { jobId, text: r.text, filename: r.filename })).id)
+  }
+  // 逐个查这几份的状态(文件列表接口不按岗位过滤,库里已有别的简历时数不准)
+  await waitFor('parse', async () => {
+    const states = await Promise.all(fileIds.map((id) => api<{ parseState: string }>('GET', `/api/files/${id}`)))
+    return states.every((f) => f.parseState === 'parsed' || f.parseState === 'failed')
   })
-  applicationIds.push(app.id)
+}
+const candidates = () => api<Row[]>('GET', `/api/jobs/${jobId}/candidates`)
+
+const todo = (await candidates()).filter((c) => !c.verdict)
+if (todo.length) {
+  say(`粗评 ${todo.length} 位候选人…`, `Screening ${todo.length} candidates…`)
+  await api('POST', '/api/evaluations', { applicationIds: todo.map((c) => c.applicationId), tier: 'screen' })
+}
+let screened: Row[] = []
+await waitFor('screen', async () => {
+  screened = await candidates()
+  return screened.every((c) => c.verdict)
+})
+
+if (!screened.some((c) => c.verdict?.source === 'deep')) {
+  const best = [...screened].sort((a, b) => (b.verdict?.score ?? 0) - (a.verdict?.score ?? 0))[0]!
+  say(`精评得分最高的 ${best.name}…`, `Running a deep evaluation on the top candidate, ${best.name}…`)
+  await api('POST', '/api/evaluations', { applicationIds: [best.applicationId], tier: 'deep' })
+  await waitFor('deep', async () => (await candidates()).find((x) => x.applicationId === best.applicationId)?.verdict?.source === 'deep')
 }
 
-// ── 评估 ──────────────────────────────────────────────────────────
-// **直接调队列里的 runEvaluation** —— 和线上点「分析」走的是同一个函数,
-// 不另写一份落库逻辑。脚本自己拼一份的话必然与生产路径漂移(横向定位就这么漏过)。
-//
-// 顺序:先把其余人跑成粗评,最后再对第一个人跑精评 —— 横向定位要拿同岗位其他人
-// 的分做基准。真实使用也是这个顺序:先批量粗评,拿不准的那个再单独点精评。
-for (const applicationId of applicationIds.slice(1)) {
-  if (await prisma.evaluation.findFirst({ where: { applicationId } })) continue
-  await runEvaluation(applicationId, 'screen')
-  console.log(`[seed] screen ${applicationId}`)
-}
-if (!(await prisma.evaluation.findFirst({ where: { applicationId: applicationIds[0]!, tier: 'deep' } }))) {
-  await runEvaluation(applicationIds[0]!, 'deep')
-  console.log(`[seed] deep ${applicationIds[0]}`)
-}
-
-// 给第一个人加两个业务标签,顺带验证标签链路。
-const first = await prisma.application.findUniqueOrThrow({ where: { id: applicationIds[0]! } })
-for (const label of ['内推', '急聘']) {
-  await prisma.candidateTag.create({
-    data: { candidateId: first.candidateId, label, createdBy: ACTOR },
-  }).catch(() => { /* 已存在 */ })
-}
-
-console.log('\n[seed] 完成。')
-await prisma.$disconnect()
+say(`完成:${WEB}/?job=${jobId}`, `Done: ${WEB}/?job=${jobId}`)

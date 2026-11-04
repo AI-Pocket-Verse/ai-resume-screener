@@ -9,6 +9,7 @@
     "build": "tsc",
     "start": "node --import tsx --env-file=.env.prod dist/index.js",
     "typecheck": "tsc --noEmit",
+    "demo": "tsx scripts/seed-demo.mts",
     "test": "vitest run",
     "pretest": "DATABASE_URL=\"file:./test.db\" prisma migrate deploy",
     "db:migrate": "node --env-file=.env.dev node_modules/prisma/build/index.js migrate dev",

@@ -12,6 +12,7 @@
   "scripts": {
     "bootstrap": "node -e \"const fs=require('fs');if(!fs.existsSync('api/.env.dev'))fs.copyFileSync('api/.env.example','api/.env.dev')\" && pnpm --filter @ai-resume-screener/api db:migrate",
     "dev": "pnpm --parallel --filter @ai-resume-screener/api --filter @ai-resume-screener/web dev",
+    "demo": "pnpm --filter @ai-resume-screener/api run demo",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",

@@ -32,7 +32,7 @@ Scorecard: AI drafts it from the JD; adjust dimensions, weights, anchors and har
 
 ![Scorecard](docs/screenshots/en/scorecard.png)
 
-All candidates, companies and contact details in the screenshots are fictional.
+All candidates, companies and contact details in the screenshots are fictional -- the same data `pnpm demo` creates (see Quick start).
 
 ## Requirements
 
@@ -56,6 +56,14 @@ pnpm dev         # start the api (:4070) and the web app (:5070)
 Open <http://localhost:5070>. By default the app runs in **local single-user mode**: no login, and the only local user is the super admin. A "Default team" is created on first start.
 
 Models are called through the Claude Code CLI on this machine by default. Without a Claude subscription, switch to another provider in `api/.env.dev` (see "Model configuration" below) and restart `pnpm dev`.
+
+Want to look around first? With `pnpm dev` running, run this in another terminal to create a demo job with four fictional resumes, an AI-drafted scorecard, screening results and one deep evaluation (it calls the model for real and takes a few minutes):
+
+```bash
+pnpm demo        # follows the system language; or pnpm demo en / pnpm demo zh
+```
+
+The demo data is written in the language you choose, and so are the AI conclusions. Switching the UI language later does not translate existing resumes or evaluations, so run `pnpm demo en` and `pnpm demo zh` if you want both. The script only works in local single-user mode.
 
 Getting started: create a job → set up the scorecard (AI can draft it from the JD) → upload resumes (parsed automatically) → click "Analyze N new" to screen them → run a deep evaluation on the candidates you are interested in.
 
@@ -108,7 +116,7 @@ Notes:
 | `pnpm test` | Run all unit tests (api tests use a separate `api/prisma/test.db`) |
 | `pnpm --filter @ai-resume-screener/api db:migrate` | Create and apply a migration after changing `api/prisma/schema.prisma` |
 
-`api/scripts/` has a few development scripts (usage at the top of each file): `parse-one.mts` parses a single resume, `seed-demo.mts` builds a set of demo data, and `eval-regress.mts` compares evaluations after a prompt change (its `eval-baseline.json` output contains candidate names and is ignored by git).
+`api/scripts/` has a few development scripts (usage at the top of each file): `parse-one.mts` parses a single resume, `seed-demo.mts` is the `pnpm demo` script above (demo data in `demo-data.mts`), and `eval-regress.mts` compares evaluations after a prompt change (its `eval-baseline.json` output contains candidate names and is ignored by git).
 
 To add more teams, call the API directly: `curl -X POST http://127.0.0.1:4070/api/teams -H 'Content-Type: application/json' -d '{"name":"Engineering"}'`.
 

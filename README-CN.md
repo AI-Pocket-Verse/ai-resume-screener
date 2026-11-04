@@ -32,7 +32,7 @@ AI 简历筛选：按岗位 JD 生成评分卡，把各种格式的简历解析�
 
 ![评分卡](docs/screenshots/zh/scorecard.png)
 
-截图中的候选人、公司与联系方式均为虚构。
+截图中的候选人、公司与联系方式均为虚构，与 `pnpm demo` 造出的数据相同（见「快速开始」）。
 
 ## 外部依赖
 
@@ -56,6 +56,14 @@ pnpm dev         # 同时启动 api（:4070）和 web（:5070）
 打开 <http://localhost:5070> 即可使用。默认是**本地单用户模式**：无需登录，唯一的本地用户就是超级管理员。首次启动会自动建一个「默认团队」。
 
 默认通过本机的 Claude Code CLI 调用模型。没有 Claude 订阅时，在 `api/.env.dev` 里改用其他模型通道（见下节「模型配置」），重启 `pnpm dev` 即可。
+
+想先看看效果？在 `pnpm dev` 运行时另开一个终端执行下面的命令，会建一个演示岗位，包含四份虚构简历、AI 生成的评分卡、粗评结果和一份精评（真实调用模型，需要几分钟）：
+
+```bash
+pnpm demo        # 跟随系统语言；也可以 pnpm demo zh / pnpm demo en
+```
+
+演示数据用你选的语言，AI 结论也是同一种语言。之后切换界面语言不会翻译已有的简历和评估，想两种都看就分别跑 `pnpm demo zh` 和 `pnpm demo en`。脚本只支持本地单用户模式。
 
 上手顺序：新建岗位 → 配置评分卡（可让 AI 根据 JD 生成草稿）→ 上传简历（自动解析）→ 点「一键分析」做粗评 → 对感兴趣的候选人做精评。
 
@@ -108,7 +116,7 @@ ANTHROPIC_API_KEY=...
 | `pnpm test` | 全部单元测试（api 测试使用独立的 `api/prisma/test.db`） |
 | `pnpm --filter @ai-resume-screener/api db:migrate` | 修改 `api/prisma/schema.prisma` 后生成并应用迁移 |
 
-`api/scripts/` 下有几个开发脚本（用法写在各文件开头）：`parse-one.mts` 单独解析一份简历，`seed-demo.mts` 造一套演示数据，`eval-regress.mts` 改 prompt 后做评估回归对比（产出的 `eval-baseline.json` 含候选人姓名，已被 git 忽略）。
+`api/scripts/` 下有几个开发脚本（用法写在各文件开头）：`parse-one.mts` 单独解析一份简历，`seed-demo.mts` 即上面的 `pnpm demo`（演示数据在 `demo-data.mts`），`eval-regress.mts` 改 prompt 后做评估回归对比（产出的 `eval-baseline.json` 含候选人姓名，已被 git 忽略）。
 
 需要更多团队时，可以直接调接口：`curl -X POST http://127.0.0.1:4070/api/teams -H 'Content-Type: application/json' -d '{"name":"研发团队"}'`。
 
