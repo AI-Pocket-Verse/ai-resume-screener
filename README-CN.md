@@ -152,12 +152,14 @@ api 用 Node 原生的 `--env-file` 加载配置：`pnpm dev` 读 `api/.env.dev`
 
 ## 可选：飞书登录与权限
 
-不设置时为本地单用户模式。需要多人使用时，接入同系列开源项目 feishu-sso（飞书统一登录服务）：
+不设置时为本地单用户模式。需要多人使用时，接入同系列开源项目 [feishu-sso](https://github.com/AI-Pocket-Verse/feishu-sso)（飞书统一登录服务）。先按它的 README 部署好，再做下面几步：
 
-1. 部署 feishu-sso，并让反向代理把同一域名下的 `/auth/*` 转发给它（登录 cookie 依赖同源）。
+1. 让 feishu-sso 与本服务同域名（登录 cookie 依赖同源）：把它的 nginx 片段（feishu-sso 仓库的 `deploy/nginx-locations.conf.template`）用 `include /etc/nginx/snippets/feishu-sso.conf;` 加进本站的 `server { }`。本仓库的 `deploy/nginx.conf.template` 里已经留好这一行，取消注释即可。
 2. api 设置 `WHOAMI_URL`，指向 feishu-sso 的 whoami 接口，例如 `http://127.0.0.1:4020/api/whoami`。
 3. web 构建时设置 `VITE_SSO_BASE=/auth`（可写在 `web/.env.local`）。
 4. api 设置 `ADMIN_MOBILES`，填超级管理员的手机号（多个用逗号分隔，`+86` 等前缀会自动去掉）。飞书应用需要有读取手机号的权限，否则谁都不会被识别为超管。
+
+本地开发时，feishu-sso 也用 `pnpm dev` 启动（监听 :4020 / :5020），本项目在 `web/.env.local` 写 `VITE_SSO_BASE=http://localhost:5020/auth`，并把 `http://localhost:5070` 加进 feishu-sso 的 `CORS_ORIGINS`。
 
 接入后的权限：
 
@@ -174,9 +176,10 @@ api 用 Node 原生的 `--env-file` 加载配置：`pnpm dev` 读 `api/.env.dev`
 
 批量解析或分析完成后，给发起人推送一张飞书卡片，文案用发起时的界面语言。本服务不持有飞书凭证，通知通过 feishu-sso 发送，因此需要先完成上面的飞书登录：
 
-1. api 设置 `AUTH_API_BASE`，指向 feishu-sso 的 API 地址，例如 `http://127.0.0.1:4020/api`。
+1. api 设置 `AUTH_API_BASE`，指向 feishu-sso 的 API 地址，例如 `http://127.0.0.1:4020/api`。要在本机直连，不要经过域名：通知接口不对外开放。
 2. api 设置 `INTERNAL_API_TOKEN`，值必须与 feishu-sso 配置中的 `INTERNAL_API_TOKEN` 完全相同。
 3. api 设置 `WEB_PUBLIC_URL` 为用户实际访问本服务的地址，卡片里的按钮会打开它。
+4. 飞书应用需要开启机器人能力和 `im:message:send_as_bot` 权限（见 feishu-sso 的 README）。
 
 两项都不设置时不发通知，启动日志会显示 `feishu notify: off`。生产环境配置了 `AUTH_API_BASE` 但口令为空或仍是占位符时，api 会拒绝启动，避免通知悄悄失效。
 

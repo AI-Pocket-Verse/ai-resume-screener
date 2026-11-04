@@ -152,12 +152,14 @@ Resumes contain personal data. Read this section before deploying.
 
 ## Optional: Feishu login and permissions
 
-Without it the app runs in local single-user mode. For multiple users, connect feishu-sso (a Feishu single sign-on service from the same series of open-source projects):
+Without it the app runs in local single-user mode. For multiple users, connect [feishu-sso](https://github.com/AI-Pocket-Verse/feishu-sso), an open-source Feishu (Lark) single sign-on service from the same series. Set it up by following its README first, then:
 
-1. Deploy feishu-sso and have the reverse proxy forward `/auth/*` on the same domain to it (the login cookie relies on the same origin).
+1. Serve feishu-sso on the same domain as this app (the login cookie relies on it): add its nginx snippet (`deploy/nginx-locations.conf.template` in the feishu-sso repo) to this site's `server { }` block with `include /etc/nginx/snippets/feishu-sso.conf;`. The line is already in this repo's `deploy/nginx.conf.template`, commented out.
 2. Set `WHOAMI_URL` on the api to feishu-sso's whoami endpoint, e.g. `http://127.0.0.1:4020/api/whoami`.
 3. Build the web app with `VITE_SSO_BASE=/auth` (can be put in `web/.env.local`).
 4. Set `ADMIN_MOBILES` on the api to the super admins' mobile numbers (comma-separated; prefixes such as `+86` are stripped). The Feishu app needs permission to read mobile numbers, otherwise nobody is recognized as a super admin.
+
+For local development, start feishu-sso with `pnpm dev` as well (it listens on :4020 / :5020), set `VITE_SSO_BASE=http://localhost:5020/auth` in `web/.env.local`, and add `http://localhost:5070` to feishu-sso's `CORS_ORIGINS`.
 
 Permissions once login is enabled:
 
@@ -174,9 +176,10 @@ When the same person applies to several jobs, the applications are merged into o
 
 When a parsing or analysis batch finishes, a Feishu card is sent to the person who started it, written in the UI language they were using at the time. This service holds no Feishu credentials; notifications go through feishu-sso, so set up Feishu login first:
 
-1. Set `AUTH_API_BASE` on the api to feishu-sso's API base, e.g. `http://127.0.0.1:4020/api`.
+1. Set `AUTH_API_BASE` on the api to feishu-sso's API base, e.g. `http://127.0.0.1:4020/api`. Call it directly on the same machine, not through the domain: the notification endpoints are not exposed publicly.
 2. Set `INTERNAL_API_TOKEN` on the api to exactly the same value as `INTERNAL_API_TOKEN` in feishu-sso's configuration.
 3. Set `WEB_PUBLIC_URL` to the address users actually open; the button in the card links there.
+4. The Feishu app needs the bot capability and the `im:message:send_as_bot` scope (see feishu-sso's README).
 
 With neither set, no notifications are sent and the startup log shows `feishu notify: off`. In production, if `AUTH_API_BASE` is set but the token is empty or still a placeholder, the api refuses to start so that notifications do not silently fail.
 

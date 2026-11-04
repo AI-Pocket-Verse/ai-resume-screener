@@ -14,11 +14,12 @@ server {
     ssl_protocols       TLSv1.2 TLSv1.3;
 
     # 安全响应头。CSP 只放行同源资源;前端没有内联脚本(首屏皮肤脚本是 /skin-init.js)。
+    # img-src 放行 https: 是为了飞书头像(启用登录后 avatar_url 指向飞书 CDN,国内与国际版域名不同)。
     add_header Strict-Transport-Security "max-age=31536000" always;
     add_header X-Frame-Options           "DENY" always;
     add_header X-Content-Type-Options    "nosniff" always;
     add_header Referrer-Policy           "no-referrer" always;
-    add_header Content-Security-Policy   "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'" always;
+    add_header Content-Security-Policy   "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'" always;
 
     # Resumes are capped at 20 MB by the api.
     client_max_body_size 25m;
@@ -35,6 +36,10 @@ server {
         proxy_set_header X-Forwarded-For   $remote_addr;  # 覆盖而非追加:客户端不能伪造 XFF 绕过限流
         proxy_set_header X-Forwarded-Proto $scheme;
     }
+
+    # 启用飞书登录时取消注释:feishu-sso 的 nginx 片段(它仓库里的 deploy/nginx-locations.conf.template),
+    # 把同域名下的 /auth/ 转给登录服务,登录 cookie 才能共享。
+    # include /etc/nginx/snippets/feishu-sso.conf;
 
     # SPA fallback
     location / {
