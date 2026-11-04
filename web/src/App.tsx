@@ -12,6 +12,7 @@ import { JobDialog } from '@/components/JobDialog'
 import { MembersDialog } from '@/components/MembersDialog'
 import { Shell } from '@/components/Shell'
 import { analyzeTargets, isUnanalyzed } from '@/lib/list'
+import { clearJobParam, pickInitialJob } from '@/lib/job-link'
 import { errorMessage } from '@/lib/errors'
 import { useI18n } from '@/i18n'
 import { teamName } from '@/lib/values'
@@ -94,7 +95,12 @@ function Workspace() {
         setTeams(t)
         setJobs(j)
         setMe(m)
-        if (j.length) setJob((cur) => cur ?? j[0]!)
+        // 通知卡片的链接带 ?job=,打开就落在那个岗位上。只在加载成功后清掉参数:
+        // SSO 模式未登录时这里会失败,参数要留给登录后的 return_to。
+        // 先算好再 setJob:更新函数可能在下一次渲染才执行,那时参数已经清掉了。
+        const initial = pickInitialJob(j, window.location.search)
+        if (initial) setJob((cur) => cur ?? initial)
+        clearJobParam()
       })
       .catch(() => notify(t('app.toast.loadFailed')))
   }, [notify, t])
